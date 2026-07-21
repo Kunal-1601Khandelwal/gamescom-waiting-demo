@@ -144,6 +144,10 @@ const GAME_DB = {
   queue:'novo-queue.html', catch:'novo-catch.html',
 };
 const GAME = GAME_DB[new URLSearchParams(location.search).get('game')] || GAME_DB.waiting;
+
+/* tagline hold: 2s during local development/testing, 5s on the deployed site */
+const IS_LOCAL = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+const TAG_HOLD = IS_LOCAL ? 2 : 5;
 /* the game preloads invisibly in an embedded frame during the intro;
    go() simply crossfades to it and signals it to start — no navigation. */
 const gameFrame = document.getElementById('gameFrame');
@@ -362,14 +366,14 @@ function frame(now){
       $('taglineScene').classList.add('on');
     }
     $('flashOv').style.opacity = S.t > 0.1 ? String(Math.max(0, 0.9-(S.t-0.1)*2.0)) : '0';
-    $('tl1').classList.toggle('show', S.t > 0.35 && S.t < 5.2);
-    $('tl2').classList.toggle('show', S.t > 0.75 && S.t < 5.2);
-    if(S.t > 5.2) $('taglineScene').classList.remove('on');
-    if(S.t > 5.3 && !S.started){
+    $('tl1').classList.toggle('show', S.t > 0.35 && S.t < TAG_HOLD + 0.2);
+    $('tl2').classList.toggle('show', S.t > 0.75 && S.t < TAG_HOLD + 0.2);
+    if(S.t > TAG_HOLD + 0.2) $('taglineScene').classList.remove('on');
+    if(S.t > TAG_HOLD + 0.3 && !S.started){
       S.started = true;
       try{ gameFrame.contentWindow.postMessage('novo-start', '*'); }catch(e){}
     }
-    if(S.t > 5.5){ S.scene = 'game'; $('flashOv').style.opacity = '0'; }
+    if(S.t > TAG_HOLD + 0.5){ S.scene = 'game'; $('flashOv').style.opacity = '0'; }
   }
 
   /* background: dark waiting-navy → bright sky, driven by the ignition */
