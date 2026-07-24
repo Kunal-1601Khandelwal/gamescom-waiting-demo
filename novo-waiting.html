@@ -196,7 +196,7 @@ const S = {
   score:0, streak:0, bestStreak:0, perfects:0, hearts:3,
   shake:0, flash:0,
 };
-const trail=[], parts=[], waves=[], floats=[];
+const parts=[], waves=[], floats=[];
 const store = {
   get best(){ return +localStorage.nvw_best||0 }, set best(v){ localStorage.nvw_best=v },
   get name(){ return localStorage.nv_name||'' }, set name(v){ localStorage.nv_name=v },
@@ -352,7 +352,6 @@ function frame(now){
 
   const spd = S.mode==='playing' ? S.speed : 0.7;
   S.angle = norm(S.angle + spd*S.dir*dt);
-  trail.push(S.angle); if(trail.length>14) trail.shift();
 
   S.shake = Math.max(0, S.shake - dt*4);
   S.flash = Math.max(0, S.flash - dt*3);
@@ -377,13 +376,6 @@ function frame(now){
     ctx.shadowBlur=0;
   }
 
-  // trail
-  for(let i=0;i<trail.length;i++){
-    const a=trail[i], f=i/trail.length;
-    ctx.beginPath();
-    ctx.arc(CX+Math.cos(a)*R, CY+Math.sin(a)*R, 3+f*4, 0, TAU);
-    ctx.fillStyle=`rgba(226,240,250,${f*f*.4})`; ctx.fill();
-  }
   // spark — the loader head
   const sx=CX+Math.cos(S.angle)*R, sy=CY+Math.sin(S.angle)*R;
   ctx.beginPath(); ctx.arc(sx,sy,9,0,TAU);

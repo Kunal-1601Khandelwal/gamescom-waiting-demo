@@ -169,7 +169,7 @@ const S = {
   speed:0, spawnGrace:0, dieT:0,
   score:0, wallsPassed:0, corePasses:0, shake:0,
 };
-const trail=[], embers=[], floats=[];
+const embers=[], floats=[];
 const store = {
   get best(){ return +localStorage.nvq_best||0 }, set best(v){ localStorage.nvq_best=v },
   get name(){ return localStorage.nv_name||'' }, set name(v){ localStorage.nv_name=v },
@@ -199,7 +199,7 @@ function startGame(){
   Object.assign(S,{mode:'playing',py:H*0.45,vy:0,px:W*0.30,walls:[],
     speed:W*0.45, spawnGrace:1.2, dieT:0,
     score:0, wallsPassed:0, corePasses:0, shake:0});
-  trail.length=embers.length=floats.length=0;
+  embers.length=floats.length=0;
   $('score').textContent='0'; $('wallChip').textContent='QUEUE 0';
   $('coreChip').classList.remove('on');
   show('menu',false); show('over',false); show('boardScreen',false);
@@ -326,9 +326,6 @@ function frame(now){
         if(S.py - PR < w.gapY - w.gapH/2 || S.py + PR > w.gapY + w.gapH/2) die();
       }
     }
-    trail.push({x:S.px, y:S.py});
-    if(trail.length>16) trail.shift();
-    for(const t of trail) t.x -= S.speed*dt;
   }
   if(S.mode==='dying'){
     S.dieT += dt;
@@ -372,11 +369,6 @@ function frame(now){
   // you — the one not waiting
   if(S.mode==='playing' || S.mode==='dying'){
     if(S.mode==='playing'){
-      for(let i=0;i<trail.length;i++){
-        const t=trail[i], f=i/trail.length;
-        ctx.beginPath(); ctx.arc(t.x, t.y, 2+f*5, 0, Math.PI*2);
-        ctx.fillStyle=`rgba(177,213,242,${f*f*.4})`; ctx.fill();
-      }
       const tilt = Math.max(-0.5, Math.min(0.9, S.vy/(H*0.9)));
       ctx.save(); ctx.translate(S.px, S.py); ctx.rotate(tilt);
       ctx.beginPath(); ctx.arc(0,0,PR,0,Math.PI*2);
