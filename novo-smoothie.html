@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMOOTH OPERATOR — The Waiting Game</title>
+<style>
+  :root{
+    --blue:#001965; --blue2:#00113F; --lblue:#3B97DE; --tint1:#E2F0FA; --tint2:#B1D5F2;
+    --magenta:#C6007E; --white:#fff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    font-family:'Apis','Source Sans 3','Segoe UI',system-ui,sans-serif;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.02) 0 3px, transparent 3px 46px),
+      linear-gradient(180deg,#002B7A 0%, var(--blue) 45%, #000E38 100%);
+    color:var(--white);overflow:hidden;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation;
+    display:flex;flex-direction:column;align-items:center;
+  }
+
+  header{width:100%;max-width:480px;padding:14px 18px 2px;display:flex;justify-content:space-between;align-items:flex-start;}
+  .hTitle{font-size:16px;font-weight:800;letter-spacing:3px;}
+  .hSub{font-size:10.5px;letter-spacing:2px;color:var(--tint2);margin-top:3px;font-weight:600;}
+  .hRight{text-align:right;font-size:11px;color:var(--tint2);font-weight:600;}
+  .hRight b{color:#fff;font-size:14px;font-variant-numeric:tabular-nums;}
+
+  #coins{
+    font-size:36px;font-weight:800;line-height:1;text-align:center;margin-top:2px;
+    text-shadow:0 0 24px rgba(59,151,222,.6);font-variant-numeric:tabular-nums;
+  }
+  .coinLbl{font-size:10px;letter-spacing:3px;color:var(--lblue);text-align:center;font-weight:700;margin-top:2px;}
+
+  /* overdrive */
+  #odWrap{width:min(78%,340px);margin:8px auto 0;}
+  #odBar{height:9px;border-radius:50px;background:rgba(0,17,63,.6);overflow:hidden;box-shadow:inset 0 2px 4px rgba(0,0,0,.4);}
+  #odFill{height:100%;width:0;border-radius:50px;background:linear-gradient(90deg,var(--lblue),#7FC0F0);transition:width .15s;}
+  #odBar.hot #odFill{background:linear-gradient(90deg,var(--magenta),#FF6EB8);box-shadow:0 0 12px rgba(198,0,126,.8);}
+  #odLbl{font-size:10.5px;letter-spacing:2px;color:var(--tint2);font-weight:700;text-align:center;margin-top:3px;}
+  #odLbl.hot{color:#FF9AD1;}
+
+  #ticker{
+    margin-top:6px;font-size:11px;font-style:italic;font-weight:600;color:var(--tint2);
+    text-align:center;padding:0 20px;transition:opacity .4s;min-height:14px;
+  }
+
+  /* ---------- the line ---------- */
+  #line{
+    flex:1;width:100%;max-width:480px;min-height:0;position:relative;
+    display:flex;flex-direction:column;justify-content:space-evenly;
+    padding:6px 16px 4px;
+  }
+  .station{
+    position:relative;display:flex;align-items:center;gap:12px;
+    background:rgba(255,255,255,.07);
+    border:1.5px solid rgba(177,213,242,.28);border-radius:18px;
+    padding:9px 14px;cursor:pointer;min-height:64px;
+    transition:transform .07s;
+  }
+  .station:active{transform:scale(.98);}
+  .station.ready{border-color:#fff;box-shadow:0 0 18px rgba(226,240,250,.35);}
+  .ring{
+    position:relative;width:46px;height:46px;border-radius:50%;flex:0 0 auto;
+    background:conic-gradient(var(--lblue) calc(var(--p)*1%), rgba(0,17,63,.55) 0);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .station.ready .ring{background:conic-gradient(#fff calc(var(--p)*1%), rgba(0,17,63,.55) 0);animation:pulse 1s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{filter:brightness(1);}50%{filter:brightness(1.5);}}
+  .ring::before{content:'';position:absolute;inset:5px;border-radius:50%;background:#0A1B4C;}
+  .ring .ic{position:relative;font-size:21px;z-index:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.4));}
+  .sName{font-size:14.5px;font-weight:800;letter-spacing:1px;}
+  .sHint{font-size:10px;color:var(--tint2);font-weight:600;margin-top:1px;}
+  .sBot{
+    margin-left:auto;font-size:10.5px;font-weight:800;border-radius:50px;padding:4px 12px;white-space:nowrap;
+    background:rgba(255,255,255,.1);border:1.5px solid rgba(177,213,242,.35);color:var(--tint2);
+  }
+  .sBot.on{background:#fff;color:var(--blue);border-color:#fff;}
+  .qBadge{
+    position:absolute;top:-9px;right:14px;font-size:10px;font-weight:800;
+    background:var(--lblue);color:#fff;border-radius:50px;padding:2px 9px;
+    box-shadow:0 2px 6px rgba(0,25,101,.5);display:none;
+  }
+  .belt{
+    height:14px;margin:0 34px;border-radius:8px;position:relative;overflow:hidden;
+    background:repeating-linear-gradient(90deg, rgba(177,213,242,.22) 0 14px, rgba(177,213,242,.06) 14px 28px);
+    animation:beltMove 1.2s linear infinite;
+  }
+  @keyframes beltMove{to{background-position:28px 0;}}
+  body.od .belt{animation-duration:.4s;}
+  .chip{
+    position:absolute;width:16px;height:16px;border-radius:50%;left:50%;margin-left:-8px;z-index:8;
+    background:radial-gradient(circle at 35% 30%, #9FD0F5, var(--lblue) 60%, #1565B8);
+    pointer-events:none;opacity:0;transition:top .4s ease, opacity .4s;
+  }
+  .floatUp{
+    position:absolute;font-weight:800;font-size:16px;color:#fff;pointer-events:none;z-index:30;
+    text-shadow:0 2px 8px rgba(0,25,101,.9);
+    animation:riseUp 1s ease-out forwards;
+  }
+  .floatUp.mag{color:#FF9AD1;}
+  @keyframes riseUp{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(-46px);}}
+
+  /* magenta berry: 64px hit area, 40px visual */
+  #berry{
+    position:fixed;width:64px;height:64px;border-radius:50%;cursor:pointer;display:none;z-index:50;
+    border:12px solid transparent;background-clip:padding-box;
+    background-image:radial-gradient(circle at 35% 30%, #FFD7EE 0%, var(--magenta) 55%, #7D0050 100%);
+    box-shadow:0 0 20px rgba(198,0,126,.85);
+    animation:berryRoll 4.2s linear forwards;
+  }
+  @keyframes berryRoll{from{left:-70px;transform:rotate(0);}to{left:100vw;transform:rotate(720deg);}}
+
+  /* ---------- shop ---------- */
+  #shop{
+    width:100%;max-width:480px;
+    padding:6px 12px calc(12px + env(safe-area-inset-bottom));
+  }
+  #shopLbl{font-size:10.5px;letter-spacing:3px;color:var(--lblue);font-weight:700;padding:0 4px 5px;}
+  #shopRow{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
+  #shopRow::-webkit-scrollbar{display:none;}
+  @media (hover:hover){
+    #shopRow{scrollbar-width:thin;scrollbar-color:rgba(177,213,242,.5) transparent;padding-bottom:6px;}
+    #shopRow::-webkit-scrollbar{display:block;height:6px;}
+    #shopRow::-webkit-scrollbar-thumb{background:rgba(177,213,242,.5);border-radius:3px;}
+  }
+  .card{
+    flex:0 0 118px;background:rgba(255,255,255,.07);
+    border:1.5px solid rgba(177,213,242,.28);border-radius:16px;
+    padding:9px 10px;cursor:pointer;text-align:left;
+    transition:transform .08s;
+  }
+  .card:active{transform:scale(.96);}
+  .card.can{background:rgba(59,151,222,.22);border-color:var(--lblue);}
+  .card.max{opacity:.4;}
+  .cIcon{font-size:19px;}
+  .cName{font-size:10.5px;font-weight:800;letter-spacing:.5px;margin-top:2px;line-height:1.15;}
+  .cDesc{font-size:10px;color:var(--tint2);font-weight:600;margin-top:2px;min-height:22px;line-height:1.25;}
+  .cCost{
+    display:inline-block;margin-top:5px;font-size:10.5px;font-weight:800;
+    background:#fff;color:var(--blue);border-radius:50px;padding:2px 10px;
+  }
+
+  #banner{
+    position:fixed;left:50%;top:20%;translate:-50% 0;z-index:55;display:none;
+    font-size:23px;font-weight:800;text-align:center;pointer-events:none;color:#fff;
+    text-shadow:0 2px 14px rgba(0,25,101,.95);width:90%;
+    animation:bannerUp 3.2s ease-out forwards;
+  }
+  @keyframes bannerUp{
+    0%{opacity:0;transform:translateY(10px);}
+    8%,75%{opacity:1;transform:translateY(0);}
+    100%{opacity:0;transform:translateY(-26px);}
+  }
+  #banner .mag{color:#FF9AD1;}
+  #banner .sub{font-size:13px;font-weight:600;}
+  .logo{position:fixed;right:12px;bottom:calc(8px + env(safe-area-inset-bottom));width:76px;opacity:.9;pointer-events:none;z-index:2;}
+  @media (max-width:660px){ .logo{display:none;} }
+  @media (max-height:620px){
+    #coins{font-size:26px;}
+    .station{min-height:48px;padding:6px 12px;}
+    .ring{width:36px;height:36px;}
+    .ring .ic{font-size:16px;}
+    .belt{height:8px;margin:0 30px;}
+    #ticker{display:none;}
+    .cDesc{display:none;}
+  }
+  @media (max-height:480px){ body{overflow:auto;} }
+  @media (prefers-reduced-motion:reduce){
+    .belt,.station.ready .ring,#berry{animation:none;}
+    #berry{left:40%;}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="hTitle">SMOOTH OPERATOR</div>
+      <div class="hSub">RUN THE LINE · THEN LET IT RUN ITSELF</div>
+    </div>
+    <div class="hRight"><b id="served">0</b> served<br><span id="rate">0</span>/sec</div>
+  </header>
+  <div id="coins">0</div>
+  <div class="coinLbl">COINS</div>
+  <div id="odWrap">
+    <div id="odBar"><div id="odFill"></div></div>
+    <div id="odLbl">TAP STATIONS TO CHARGE OVERDRIVE</div>
+  </div>
+  <div id="ticker">Four stations. Your thumb runs them all — for now.</div>
+
+  <div id="line"></div>
+
+  <div id="shop">
+    <div id="shopLbl">HIRE &amp; UPGRADE</div>
+    <div id="shopRow"></div>
+  </div>
+
+  <div id="berry"></div>
+  <div id="banner"></div>
+  <img class="logo" src="assets/novo-logo-white.png" alt="Novo Nordisk">
+
+<script>
+(() => {
+'use strict';
+
+const SAVE_KEY='novo-smoothie-v1';
+const STATIONS=[
+  {name:'PICK',   icon:'\u{1FAD0}', hint:'Shake the berry tree',   hire:15},
+  {name:'BLEND',  icon:'\u{1F964}', hint:'Whirr it smooth',        hire:60},
+  {name:'BOTTLE', icon:'\u{1F9F4}', hint:'Cap it tight',           hire:250},
+  {name:'SERVE',  icon:'\u{1F64C}', hint:'Hand it over, get paid', hire:1000},
+];
+const RECIPES=[
+  {at:100,   mult:3,  name:'BERRY MIX'},
+  {at:1000,  mult:10, name:'GREEN GLOW'},
+  {at:10000, mult:30, name:'SUNRISE BLEND'},
+];
+const LINES=[
+  'Four stations. Your thumb runs them all — for now.',
+  'Hire a bot. Retire your thumb. Feel great about it.',
+  "Some things are worth the wait. Your health isn't.",
+  'Blueberries: aggressively on-brand.',
+  'Perfect taps pay bonus coins. Bots never crit. Humans rule.',
+  'Fully automated? Pocket the phone. The line keeps serving.',
+  'Good things take time to blend.',
+];
+
+let S={coins:0, served:0, bots:[-1,-1,-1,-1], belt:0, seen:0};
+// bots[i]: -1 = not hired, 0+ = hired at level
+try{
+  const raw=localStorage.getItem(SAVE_KEY);
+  if(raw){const p=JSON.parse(raw); if(p&&typeof p.coins==='number'&&Array.isArray(p.bots)) S=Object.assign(S,p);}
+}catch(e){}
+
+let q=[0,0,0,0];          // items waiting at station (PICK ignores)
+let p=[0,0,0,0];          // ring progress 0..1
+let fullAt=[0,0,0,0];     // timestamp ring hit 100 (for perfect window)
+let odTaps=0, odEnd=0, servedCarry=0;
+const OD_NEED=20, OD_SECS=10, QCAP=10;
+
+const botOn=i=>S.bots[i]>=0;
+const fullAuto=()=>S.bots.every(b=>b>=0);
+const od=()=>Date.now()<odEnd;
+const recipeMult=()=>{let m=1; for(const r of RECIPES) if(S.served>=r.at) m=r.mult; return m;};
+const cycle=i=>Math.max(0.4, 2.5*Math.pow(0.9,Math.max(S.bots[i],0))*Math.pow(0.87,S.belt))/(od()?3:1);
+const hireCost=i=>Math.ceil(STATIONS[i].hire*Math.pow(1.6,S.bots[i]+1)); // -1 -> hire price
+const beltCost=()=>Math.ceil(100*Math.pow(2.2,S.belt));
+const lineRate=()=>{ // bottleneck throughput, coins/sec (auto only)
+  if(!fullAuto()) return 0;
+  const slowest=Math.max(...[0,1,2,3].map(cycle));
+  return recipeMult()/slowest;
+};
+
+const fmt=n=>{
+  n=Math.floor(n);
+  const T=[[1e12,'T'],[1e9,'B'],[1e6,'M'],[1e4,'K']];
+  for(const [v,s] of T) if(n>=v) return (Math.floor(n/(v/10))/10).toLocaleString('en-US')+s;
+  return n.toLocaleString('en-US');
+};
+
+/* ---------- audio ---------- */
+let AC=null;
+function beep(f,dur=0.05,g=0.08,type='sine'){
+  try{
+    if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(),gn=AC.createGain();
+    o.type=type;o.frequency.value=f;
+    gn.gain.setValueAtTime(g,AC.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+    o.connect(gn);gn.connect(AC.destination);o.start();o.stop(AC.currentTime+dur);
+  }catch(e){}
+}
+
+/* ---------- build the line ---------- */
+const $=id=>document.getElementById(id);
+const line=$('line');
+const sEls=[], chipPool=[];
+STATIONS.forEach((st,i)=>{
+  const el=document.createElement('div');
+  el.className='station';
+  el.innerHTML=`<span class="qBadge" id="q-${i}"></span>
+    <div class="ring" id="ring-${i}" style="--p:0"><span class="ic">${st.icon}</span></div>
+    <span><div class="sName">${st.name}</div><div class="sHint">${st.hint}</div></span>
+    <span class="sBot" id="bot-${i}">MANUAL</span>`;
+  el.addEventListener('pointerdown',e=>{e.preventDefault();tapStation(i);});
+  line.appendChild(el);
+  sEls.push(el);
+  if(i<3){
+    const b=document.createElement('div');
+    b.className='belt';
+    line.appendChild(b);
+  }
+});
+for(let i=0;i<6;i++){
+  const c=document.createElement('div');
+  c.className='chip';
+  line.appendChild(c);
+  chipPool.push(c);
+}
+let chipI=0;
+function flyChip(i){
+  if(i>=3) return;
+  const c=chipPool[chipI=(chipI+1)%chipPool.length];
+  const a=sEls[i].offsetTop+sEls[i].offsetHeight/2-8;
+  const b=sEls[i+1].offsetTop+sEls[i+1].offsetHeight/2-8;
+  clearTimeout(c._t);
+  c.style.transition='none'; c.style.top=a+'px'; c.style.opacity=1;
+  void c.offsetWidth;
+  c.style.transition='top .4s ease, opacity .4s';
+  c.style.top=b+'px';
+  c._t=setTimeout(()=>{c.style.opacity=0;},380);
+}
+function floatTxt(i,txt,mag){
+  const f=document.createElement('div');
+  f.className='floatUp'+(mag?' mag':''); f.textContent=txt;
+  f.style.right='18px'; f.style.top=(sEls[i].offsetTop+6)+'px';
+  line.appendChild(f); setTimeout(()=>f.remove(),1000);
+}
+
+/* ---------- core: station completion ---------- */
+function hasWork(i){ return i===0 || q[i]>0; }
+function complete(i, manual){
+  const now=Date.now();
+  // perfect = tap in the naturally-filled band (nudges cap at 0.87) or within 650ms of filling
+  const perfect = manual && p[i]>=0.88 && (p[i]<1 || now-fullAt[i]<=650);
+  p[i]=0; fullAt[i]=0;
+  if(i>0) q[i]--;
+  if(i<3){ q[i+1]++; flyChip(i); }
+  else{
+    const v=recipeMult();
+    S.coins+=v; S.served++;
+    floatTxt(3,'+'+fmt(v));
+    checkRecipe();
+  }
+  if(perfect){
+    const bonus=recipeMult();
+    S.coins+=bonus;
+    floatTxt(i,'PERFECT +'+fmt(bonus),true);
+    beep(880,.07,.1); setTimeout(()=>beep(1180,.09,.1),60);
+  }else{
+    beep(520+i*90,.04,.07);
+  }
+  if(navigator.vibrate) navigator.vibrate(perfect?[10,30,10]:6);
+}
+function tapStation(i){
+  if(!hasWork(i)){ beep(160,.06,.05,'square'); return; }
+  if(!od()){
+    odTaps++;
+    if(odTaps>=OD_NEED){ odTaps=0; odEnd=Date.now()+OD_SECS*1000;
+      showBanner('<span class="mag">OVERDRIVE!</span><br><span class="sub">Line speed ×3 for '+OD_SECS+' seconds</span>');
+      beep(660,.1,.12); setTimeout(()=>beep(990,.14,.12),100);
+    }
+  }
+  if(p[i]>=0.88){
+    if(i<3 && q[i+1]>=QCAP){ beep(160,.06,.05,'square'); return; }  // downstream full
+    complete(i,true);
+  }else{
+    p[i]=Math.min(p[i]+0.28,0.87);   // nudges never enter the perfect band
+    beep(380+i*60,.03,.05);
+  }
+  paint();
+}
+
+/* ---------- recipes ---------- */
+let lastMult=recipeMult();
+function checkRecipe(){
+  const m=recipeMult();
+  if(m>lastMult){
+    lastMult=m;
+    const r=RECIPES.find(r=>r.mult===m);
+    showBanner('NEW RECIPE: <span class="mag">'+r.name+'</span><br><span class="sub">Every smoothie now worth ×'+m+' — '+LINES[2]+'</span>');
+    beep(660,.12,.12); setTimeout(()=>beep(880,.12,.12),120); setTimeout(()=>beep(1320,.2,.12),260);
+  }
+}
+
+/* ---------- magenta berry ---------- */
+let berryT=20+Math.random()*20;
+const berry=$('berry');
+function spawnBerry(){
+  berry.style.top=(15+Math.random()*55)+'%';
+  berry.style.display='block';
+  berry.style.animation='none'; void berry.offsetWidth; berry.style.animation='';
+  setTimeout(()=>{berry.style.display='none';},3000);
+}
+berry.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  berry.style.display='none';
+  const gain=30*recipeMult();
+  S.coins+=gain;
+  showBanner('<span class="mag">MAGENTA BERRY!</span><br><span class="sub">+'+fmt(gain)+' coins — only human hands catch these</span>');
+  beep(880,.1,.12); setTimeout(()=>beep(1320,.14,.12),90);
+  paint(); save();
+});
+
+/* ---------- shop ---------- */
+const shopRow=$('shopRow');
+const cards=[];
+STATIONS.forEach((st,i)=>{
+  const el=document.createElement('div');
+  el.className='card';
+  el.innerHTML=`<span class="cIcon">\u{1F916}</span>
+    <div class="cName" id="cn-${i}"></div>
+    <div class="cDesc" id="cd-${i}"></div>
+    <span class="cCost" id="cc-${i}"></span>`;
+  el.addEventListener('click',()=>{
+    const c=hireCost(i);
+    if(S.coins<c){ beep(150,.08,.06,'square'); return; }
+    S.coins-=c; S.bots[i]++;
+    beep(740,.07,.1); setTimeout(()=>beep(1050,.09,.1),70);
+    if(S.bots[i]===0){
+      showBanner((fullAuto()?'<span class="mag">FULLY AUTOMATED!</span><br><span class="sub">The line runs itself now. Even while you wait.</span>'
+        :st.name+'-BOT HIRED!<br><span class="sub">One less job for your thumb.</span>'));
+    }
+    paint(); save();
+  });
+  shopRow.appendChild(el); cards.push(el);
+});
+const beltCard=document.createElement('div');
+beltCard.className='card';
+beltCard.innerHTML=`<span class="cIcon">⚡</span>
+  <div class="cName">BELT SPEED</div>
+  <div class="cDesc" id="cd-belt"></div>
+  <span class="cCost" id="cc-belt"></span>`;
+beltCard.addEventListener('click',()=>{
+  const c=beltCost();
+  if(S.coins<c){ beep(150,.08,.06,'square'); return; }
+  S.coins-=c; S.belt++;
+  beep(740,.07,.1); setTimeout(()=>beep(1050,.09,.1),70);
+  paint(); save();
+});
+shopRow.appendChild(beltCard);
+
+/* ---------- banner ---------- */
+let bannerTimer=0;
+function showBanner(html){
+  const b=$('banner');
+  b.innerHTML=html; b.style.display='block';
+  b.style.animation='none'; void b.offsetWidth; b.style.animation='';
+  clearTimeout(bannerTimer);
+  bannerTimer=setTimeout(()=>{b.style.display='none';},3100);
+}
+
+/* ---------- paint ---------- */
+function paint(){
+  $('coins').textContent=fmt(S.coins);
+  $('served').textContent=fmt(S.served);
+  const r=lineRate();
+  $('rate').textContent=r>0?(r<100?(Math.round(r*10)/10):fmt(r)):(fullAuto()?'0':'manual');
+  for(let i=0;i<4;i++){
+    $('ring-'+i).style.setProperty('--p',Math.round(p[i]*100));
+    sEls[i].classList.toggle('ready',!botOn(i)&&p[i]>=0.88&&hasWork(i));
+    const bb=$('bot-'+i);
+    bb.textContent=botOn(i)?'\u{1F916} LVL '+(S.bots[i]+1):'MANUAL';
+    bb.classList.toggle('on',botOn(i));
+    const qb=$('q-'+i);
+    if(i>0&&q[i]>1){ qb.style.display='block'; qb.textContent='×'+q[i]; }
+    else qb.style.display='none';
+    $('cn-'+i).textContent=botOn(i)?STATIONS[i].name+'-BOT LVL '+(S.bots[i]+2):'HIRE '+STATIONS[i].name+'-BOT';
+    $('cd-'+i).textContent=botOn(i)?'Works 10% faster':'Runs the '+STATIONS[i].name.toLowerCase()+' station for you';
+    $('cc-'+i).textContent=fmt(hireCost(i));
+    cards[i].classList.toggle('can',S.coins>=hireCost(i));
+  }
+  $('cd-belt').textContent='All stations +15% speed (now ×'+(Math.round(Math.pow(1/0.87,S.belt)*100)/100)+')';
+  $('cc-belt').textContent=fmt(beltCost());
+  beltCard.classList.toggle('can',S.coins>=beltCost());
+  const hot=od();
+  $('odFill').style.width=(hot?100:odTaps/OD_NEED*100)+'%';
+  $('odBar').classList.toggle('hot',hot);
+  $('odLbl').classList.toggle('hot',hot);
+  $('odLbl').textContent=hot?'OVERDRIVE ×3 ACTIVE':'TAP STATIONS TO CHARGE OVERDRIVE ('+odTaps+'/'+OD_NEED+')';
+  document.body.classList.toggle('od',hot);
+}
+
+/* ---------- ticker ---------- */
+let lineI=0;
+setInterval(()=>{
+  const el=$('ticker');
+  el.style.opacity=0;
+  setTimeout(()=>{ lineI=(lineI+1)%LINES.length; el.textContent=LINES[lineI]; el.style.opacity=1; },400);
+},9000);
+
+/* ---------- tick (wall-clock) ---------- */
+let lastT=Date.now();
+function autoEarn(dt){ // fully-automated income for time not simulated tick-by-tick
+  const gain=lineRate()*dt;
+  if(gain<=0) return 0;
+  S.coins+=gain;
+  servedCarry+=gain/recipeMult();
+  const n=Math.floor(servedCarry); servedCarry-=n; S.served+=n;
+  checkRecipe();
+  return gain;
+}
+function tick(){
+  const now=Date.now();
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt<=0) return;
+  if(dt>3){ // background catch-up
+    dt=Math.min(dt,2*3600);
+    if(fullAuto()) autoEarn(dt);
+    else{ const i=S.bots.findIndex(b=>b<0); if(i>0) q[i]=Math.min(q[i]+Math.floor(dt/5),QCAP); }
+    return;
+  }
+  for(let i=3;i>=0;i--){       // downstream first so items do not teleport through
+    if(!hasWork(i)){ p[i]=0; fullAt[i]=0; continue; }
+    if(p[i]<1){
+      p[i]+=dt/cycle(i);
+      if(p[i]>=1){ p[i]=1; fullAt[i]=Date.now(); }
+    }
+    if(p[i]>=1 && botOn(i) && (i===3 || q[i+1]<QCAP)) complete(i,false);
+  }
+}
+setInterval(()=>{tick();paint();},100);
+
+/* offline earnings (time-gated: nothing for quick reloads) */
+if(S.seen){
+  const away=Math.min((Date.now()-S.seen)/1000,2*3600);
+  if(fullAuto()){
+    const smoothies=Math.floor(lineRate()*away/recipeMult());
+    const gain=autoEarn(away);
+    if(away>60 && gain>1){
+      setTimeout(()=>showBanner('While you waited...<br><span class="sub">your line served '+fmt(smoothies)+' smoothies: +'+fmt(gain)+' coins</span>'),600);
+    }
+  }else{
+    const i=S.bots.findIndex(b=>b<0);
+    const n=Math.min(QCAP, Math.floor(away/5));
+    if(i>0 && n>0){
+      q[i]=Math.max(q[i],n);
+      if(away>60) setTimeout(()=>showBanner('While you waited...<br><span class="sub">'+STATIONS[i-1].name+' stacked up '+n+' smoothies for you to finish</span>'),600);
+    }
+  }
+}
+
+/* berry timer + save loop */
+setInterval(()=>{
+  berryT-=1;
+  if(berryT<=0){ berryT=20+Math.random()*20; if(S.served>=5) spawnBerry(); }
+},1000);
+setInterval(save,5000);
+function save(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({coins:S.coins,served:S.served,bots:S.bots,belt:S.belt,seen:Date.now()})); }catch(e){}
+}
+addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
+
+/* pre-seeded first session: PICK is nearly done — first tap pays off instantly */
+if(S.served===0 && !botOn(0)){ p[0]=0.9; fullAt[0]=0; }
+paint();
+})();
+</script>
+</body>
+</html>
