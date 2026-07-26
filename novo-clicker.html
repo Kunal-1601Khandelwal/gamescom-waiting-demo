@@ -2,366 +2,621 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ORB CLICKER — Waiting</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cookie Clicker</title>
 <style>
-  :root{
-    --blue:#001965; --lblue:#3B97DE; --tint1:#E2F0FA; --tint2:#B1D5F2;
-    --magenta:#C6007E; --white:#fff;
-  }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;overflow:hidden;}
+  html,body{height:100%;}
   body{
-    background:var(--blue);
-    font-family:'Apis','Source Sans 3','Segoe UI',system-ui,sans-serif;
-    color:var(--white);
-    display:flex;flex-direction:column;
+    font-family:Georgia,'Times New Roman',serif;
+    background:#000;color:#fff;overflow:hidden;
     user-select:none;-webkit-user-select:none;
-    touch-action:manipulation;
   }
+  .outline{ text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 3px 6px rgba(0,0,0,.8); }
 
-  /* ---------- header ---------- */
-  header{
-    padding:14px 18px 8px;
-    display:flex;justify-content:space-between;align-items:flex-start;
-  }
-  .hTitle{font-size:15px;font-weight:700;letter-spacing:3px;color:var(--tint2);}
-  .hSub{font-size:10px;letter-spacing:1.5px;color:var(--lblue);margin-top:2px;}
-  .cps{
-    font-size:11px;color:var(--tint2);text-align:right;letter-spacing:.5px;
-  }
-  .cps b{color:#fff;font-size:13px;}
+  #game{display:grid;grid-template-columns:30% 1fr 320px;height:100%;}
 
-  /* ---------- score ---------- */
-  .scoreWrap{text-align:center;padding:2px 0 0;}
-  #score{
-    font-size:52px;font-weight:800;letter-spacing:-1px;line-height:1;
-    font-variant-numeric:tabular-nums;
-    text-shadow:0 0 30px rgba(59,151,222,.55);
+  /* ================= LEFT : the cookie ================= */
+  #left{
+    position:relative;overflow:hidden;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 3px, transparent 3px 40px),
+      linear-gradient(180deg,#16263f 0%, #0b1424 45%, #050a14 100%);
+    box-shadow:inset -8px 0 24px rgba(0,0,0,.7);
+    display:flex;flex-direction:column;align-items:center;
   }
-  .scoreLbl{font-size:11px;letter-spacing:3px;color:var(--lblue);margin-top:4px;}
+  #bakeryName{
+    margin-top:22px;padding:6px 26px;font-size:21px;font-weight:bold;
+    background:rgba(0,0,0,.45);border-radius:9px;cursor:pointer;
+    border:1px solid rgba(255,255,255,.12);
+    white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis;
+  }
+  #bakeryName:hover{background:rgba(0,0,0,.65);}
+  #cookieCount{font-size:33px;font-weight:bold;margin-top:10px;line-height:1.1;text-align:center;}
+  #cpsLine{font-size:13px;font-weight:bold;opacity:.85;margin-top:2px;}
 
-  /* ---------- orb stage ---------- */
-  .stage{
-    flex:1;position:relative;display:flex;align-items:center;justify-content:center;
-    min-height:0;
+  #cookieZone{flex:1;width:100%;position:relative;display:flex;align-items:center;justify-content:center;min-height:0;}
+  #rays,#rays2{
+    position:absolute;width:150%;aspect-ratio:1;left:50%;top:50%;translate:-50% -50%;
+    border-radius:50%;pointer-events:none;
+    background:repeating-conic-gradient(rgba(255,255,255,.10) 0 6deg, transparent 6deg 20deg);
+    -webkit-mask:radial-gradient(closest-side, #fff 20%, transparent 72%);
+            mask:radial-gradient(closest-side, #fff 20%, transparent 72%);
+    animation:spin 70s linear infinite;
   }
-  canvas#fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
-  #orb{
-    width:min(46vw,210px);height:min(46vw,210px);
-    border-radius:50%;
-    position:relative;cursor:pointer;
-    background:radial-gradient(circle at 34% 30%, #9fd0f5 0%, var(--lblue) 38%, #1565b8 72%, #0c3f86 100%);
+  #rays2{animation:spin 50s linear infinite reverse;opacity:.6;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  #bigCookie{
+    position:relative;width:min(19vw,240px);aspect-ratio:1;border-radius:50%;cursor:pointer;
+    background:
+      radial-gradient(circle at 36% 32%, #e8b877 0%, #c98d4e 42%, #a56a33 75%, #7d4c21 100%);
     box-shadow:
-      0 0 60px rgba(59,151,222,.5),
-      0 0 120px rgba(59,151,222,.25),
-      inset 0 -14px 34px rgba(0,25,101,.55),
-      inset 0 10px 26px rgba(255,255,255,.35);
-    transition:transform .08s ease;
-    animation:breathe 3.2s ease-in-out infinite;
+      inset 0 -12px 26px rgba(60,30,5,.55),
+      inset 0 10px 20px rgba(255,235,190,.45),
+      0 14px 40px rgba(0,0,0,.75),
+      0 0 90px rgba(255,220,150,.18);
+    transition:transform .07s ease;
+    filter:drop-shadow(0 0 18px rgba(255,230,170,.15));
   }
-  #orb.squish{transform:scale(.92);}
-  @keyframes breathe{
-    0%,100%{box-shadow:0 0 60px rgba(59,151,222,.5),0 0 120px rgba(59,151,222,.25),inset 0 -14px 34px rgba(0,25,101,.55),inset 0 10px 26px rgba(255,255,255,.35);}
-    50%{box-shadow:0 0 85px rgba(59,151,222,.75),0 0 150px rgba(59,151,222,.35),inset 0 -14px 34px rgba(0,25,101,.55),inset 0 10px 26px rgba(255,255,255,.35);}
+  #bigCookie.squish{transform:scale(.95);}
+  .chip{
+    position:absolute;background:radial-gradient(circle at 35% 30%, #6b4226, #3e2412 70%, #2a170a);
+    box-shadow:inset 0 -2px 4px rgba(0,0,0,.6), 0 1px 2px rgba(255,220,170,.25);
   }
-  #orb::after{ /* sheen */
-    content:'';position:absolute;left:16%;top:10%;width:34%;height:22%;
-    border-radius:50%;background:rgba(255,255,255,.5);filter:blur(6px);
-    transform:rotate(-18deg);
+  #fxL{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
+  .floatUp{
+    position:absolute;font-weight:bold;font-size:21px;color:#fff;pointer-events:none;z-index:6;
+    text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000;
+    animation:riseUp 1.1s ease-out forwards;
   }
-  .float{
-    position:absolute;font-weight:800;font-size:22px;color:#fff;
-    pointer-events:none;text-shadow:0 2px 8px rgba(0,25,101,.8);
-    animation:rise .9s ease-out forwards;
-  }
-  .float.bonus{color:var(--magenta);}
-  @keyframes rise{
-    from{opacity:1;transform:translateY(0) scale(1);}
-    to{opacity:0;transform:translateY(-70px) scale(1.25);}
-  }
+  @keyframes riseUp{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(-90px);}}
 
-  /* ---------- shop ---------- */
-  .shop{
-    padding:6px 12px calc(12px + env(safe-area-inset-bottom));
-    display:flex;flex-direction:column;gap:8px;
+  /* ================= MIDDLE ================= */
+  #mid{
+    position:relative;display:flex;flex-direction:column;overflow:hidden;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.12) 12%, rgba(0,0,0,0) 30%),
+      repeating-linear-gradient(90deg, #4a76a8 0 34px, #416a99 34px 48px, #4a76a8 48px 90px, #3d648f 90px 104px),
+      #4a76a8;
+    border-left:2px solid #000;border-right:2px solid #000;
   }
-  .shopLbl{font-size:10px;letter-spacing:3px;color:var(--lblue);padding-left:6px;}
-  .items{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;}
-  .items::-webkit-scrollbar{display:none;}
-  .item{
-    flex:0 0 128px;background:rgba(255,255,255,.07);
-    border:1px solid rgba(177,213,242,.25);
-    border-radius:16px;padding:10px 12px;cursor:pointer;
-    transition:background .15s,transform .1s,border-color .15s;
-    position:relative;
+  .wood{
+    background:
+      repeating-linear-gradient(180deg, rgba(0,0,0,.22) 0 1px, transparent 1px 7px),
+      repeating-linear-gradient(90deg, #7a5533 0 74px, #6a4729 74px 148px);
+    box-shadow:0 3px 8px rgba(0,0,0,.6), inset 0 -3px 6px rgba(0,0,0,.4);
   }
-  .item:active{transform:scale(.96);}
-  .item.can{background:rgba(59,151,222,.22);border-color:var(--lblue);}
-  .item.locked{opacity:.38;}
-  .iName{font-size:12px;font-weight:700;letter-spacing:.5px;}
-  .iDesc{font-size:9.5px;color:var(--tint2);margin-top:2px;line-height:1.3;}
-  .iCost{
-    margin-top:7px;display:inline-block;
-    font-size:11px;font-weight:800;color:var(--blue);
-    background:var(--white);border-radius:50px;padding:3px 10px;
-    font-variant-numeric:tabular-nums;
+  #ticker{
+    padding:14px 18px;text-align:center;font-size:15.5px;font-style:italic;font-weight:bold;
+    min-height:52px;display:flex;align-items:center;justify-content:center;
   }
-  .iOwn{
-    position:absolute;top:8px;right:10px;font-size:11px;font-weight:800;
-    color:var(--tint2);font-variant-numeric:tabular-nums;
+  #tickerText{transition:opacity .4s;}
+  #buildingsView{flex:1;overflow-y:auto;scrollbar-width:thin;}
+  .bRow{position:relative;padding:8px 10px 10px;min-height:74px;}
+  .bRow:nth-child(odd){background:rgba(0,0,0,.18);}
+  .bRow .icons{font-size:34px;line-height:1.25;letter-spacing:2px;word-break:break-all;filter:drop-shadow(0 3px 3px rgba(0,0,0,.55));}
+  .bRow .icons span{display:inline-block;animation:bob 2.6s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-3px);}}
+  .bRow .bTag{
+    position:absolute;top:6px;right:10px;font-size:12px;font-weight:bold;opacity:.85;
+    background:rgba(0,0,0,.4);padding:2px 9px;border-radius:6px;
   }
+  #credit{padding:6px;text-align:center;font-size:10.5px;opacity:.65;background:rgba(0,0,0,.35);}
+  #credit a{color:#ffd;}
 
-  /* ---------- logo ---------- */
-  .logo{position:fixed;right:12px;bottom:calc(8px + env(safe-area-inset-bottom));
-    width:74px;opacity:.9;pointer-events:none;z-index:5;}
+  /* ================= RIGHT : store ================= */
+  #store{
+    display:flex;flex-direction:column;background:#141414;overflow:hidden;
+    border-left:2px solid #000;
+  }
+  #storeTitle{
+    text-align:center;font-size:30px;font-weight:bold;padding:10px 0 12px;
+  }
+  #upgradeShelf{
+    min-height:66px;padding:5px;background:rgba(0,0,0,.5);
+    display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;
+    border-top:2px solid #000;border-bottom:2px solid #000;
+  }
+  .upg{
+    width:56px;height:56px;border-radius:6px;cursor:pointer;font-size:30px;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,#3a3a3a,#222);
+    border:2px solid #666;box-shadow:inset 0 2px 4px rgba(255,255,255,.15), 0 2px 4px rgba(0,0,0,.6);
+  }
+  .upg.can{border-color:#d4a017;background:linear-gradient(180deg,#4a4022,#2c2410);}
+  .upg.cant{filter:grayscale(.7) brightness(.55);}
+  #qtyRow{
+    display:flex;align-items:center;gap:4px;padding:6px 8px;background:#1c1c1c;
+    font-size:13px;font-weight:bold;border-bottom:2px solid #000;
+  }
+  .qBtn{padding:3px 12px;border-radius:5px;cursor:pointer;background:#2e2e2e;border:1px solid #555;color:#bbb;}
+  .qBtn.sel{background:#5a4a1e;border-color:#d4a017;color:#ffe9a8;}
+  #sellBtn.sel{background:#5a1e1e;border-color:#d05050;color:#ffc9c9;}
+  #products{flex:1;overflow-y:auto;scrollbar-width:thin;}
+  .prod{
+    display:flex;align-items:center;gap:10px;padding:7px 10px;cursor:pointer;min-height:64px;
+    background:linear-gradient(180deg,#d9d4c8 0%,#b3aca0 55%,#948d80 100%);
+    border-bottom:2px solid #4d4a44;box-shadow:inset 0 2px 3px rgba(255,255,255,.5);
+  }
+  .prod:hover{filter:brightness(1.1);}
+  .prod:active{filter:brightness(.92);}
+  .prod .pIcon{font-size:40px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.4));}
+  .prod .pName{font-size:17px;font-weight:bold;color:#222;line-height:1.05;}
+  .prod .pPrice{font-size:13px;font-weight:bold;margin-top:2px;}
+  .prod .pPrice.ok{color:#1e7c1e;}
+  .prod .pPrice.no{color:#a32424;}
+  .prod .pOwn{margin-left:auto;font-size:34px;font-weight:bold;color:rgba(60,55,45,.45);}
+  .prod.locked{
+    background:linear-gradient(180deg,#585858,#3a3a3a);cursor:default;
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.12);
+  }
+  .prod.locked .pIcon{filter:brightness(0) opacity(.85);}
+  .prod.locked .pName{color:#bbb;}
+  .prod.locked .pPrice.no{color:#c96a6a;}
+  .prod.hidden{display:none;}
 
-  /* golden orb bonus */
+  /* tooltip */
+  #tooltip{
+    position:fixed;z-index:60;max-width:280px;padding:10px 12px;display:none;
+    background:linear-gradient(180deg,#1e1a12,#0e0c08);border:2px solid #caa04a;border-radius:8px;
+    font-size:13px;line-height:1.4;color:#eee;pointer-events:none;
+    box-shadow:0 6px 20px rgba(0,0,0,.8);
+  }
+  #tooltip b{font-size:14.5px;}
+  #tooltip .tPrice{font-weight:bold;margin-top:4px;}
+  #tooltip .tQuote{font-style:italic;opacity:.7;margin-top:5px;font-size:12px;}
+
+  /* golden cookie + effect banner */
   #golden{
-    position:absolute;width:54px;height:54px;border-radius:50%;cursor:pointer;
-    background:radial-gradient(circle at 35% 30%, #ffd7ee 0%, var(--magenta) 55%, #7d0050 100%);
-    box-shadow:0 0 30px rgba(198,0,126,.8);
-    display:none;animation:breathe 1.2s ease-in-out infinite;
-    z-index:4;
+    position:fixed;width:72px;height:72px;border-radius:50%;cursor:pointer;display:none;z-index:50;
+    background:radial-gradient(circle at 35% 30%, #ffe9a8 0%, #f0c14b 45%, #b8860b 80%, #8a6508 100%);
+    box-shadow:0 0 26px rgba(255,215,90,.9), 0 0 70px rgba(255,215,90,.45), inset 0 -6px 12px rgba(120,80,0,.5);
+    animation:gold 1.6s ease-in-out infinite;
+  }
+  @keyframes gold{0%,100%{transform:scale(1) rotate(-6deg);}50%{transform:scale(1.12) rotate(6deg);}}
+  #banner{
+    position:fixed;left:50%;top:16%;translate:-50% 0;z-index:55;display:none;
+    font-size:26px;font-weight:bold;text-align:center;pointer-events:none;
+    animation:riseUp 3.2s ease-out forwards;
+  }
+
+  /* ================= responsive ================= */
+  @media (max-width:900px){
+    body{overflow:auto;}
+    #game{display:flex;flex-direction:column;height:auto;min-height:100%;}
+    #left{min-height:56vh;box-shadow:none;}
+    #bigCookie{width:min(52vw,240px);}
+    #store{border-left:none;border-top:3px solid #000;}
+    #products{max-height:none;overflow:visible;}
+    #buildingsView{max-height:40vh;}
   }
 </style>
 </head>
 <body>
-  <header>
-    <div>
-      <div class="hTitle">ORB CLICKER</div>
-      <div class="hSub">TAP WHILE YOU WAIT</div>
+<div id="game">
+
+  <div id="left">
+    <div id="bakeryName" class="outline"></div>
+    <div id="cookieCount" class="outline">0 cookies</div>
+    <div id="cpsLine" class="outline">per second: 0</div>
+    <div id="cookieZone">
+      <div id="rays"></div><div id="rays2"></div>
+      <div id="bigCookie"></div>
+      <canvas id="fxL"></canvas>
     </div>
-    <div class="cps"><b id="cpsVal">0</b>/sec<br><span id="tapVal">1</span>/tap</div>
-  </header>
-
-  <div class="scoreWrap">
-    <div id="score">0</div>
-    <div class="scoreLbl">ORBS COLLECTED</div>
   </div>
 
-  <div class="stage">
-    <canvas id="fx"></canvas>
-    <div id="orb"></div>
-    <div id="golden"></div>
+  <div id="mid">
+    <div id="ticker" class="wood"><span id="tickerText" class="outline"></span></div>
+    <div id="buildingsView"></div>
+    <div id="credit">fan-made demo in the style of Orteil&#39;s Cookie Clicker &middot; no affiliation</div>
   </div>
 
-  <div class="shop">
-    <div class="shopLbl">UPGRADES</div>
-    <div class="items" id="items"></div>
+  <div id="store">
+    <div id="storeTitle" class="outline">Store</div>
+    <div id="upgradeShelf"></div>
+    <div id="qtyRow">
+      <span id="sellBtn" class="qBtn">Sell</span>
+      <span style="opacity:.4;margin:0 2px;">|</span>
+      <span class="qBtn qAmt sel" data-n="1">1</span>
+      <span class="qBtn qAmt" data-n="10">10</span>
+      <span class="qBtn qAmt" data-n="100">100</span>
+    </div>
+    <div id="products"></div>
   </div>
 
-  <img class="logo" src="assets/novo-logo-white.png" alt="">
+</div>
+
+<div id="golden"></div>
+<div id="banner" class="outline"></div>
+<div id="tooltip"></div>
 
 <script>
 (() => {
 'use strict';
 
-/* ---------------- state ---------------- */
-const DEFS = [
-  {id:'finger',  name:'Extra Finger',   desc:'+1 per tap',        base:15,    tap:1,  cps:0},
-  {id:'cursor',  name:'Auto Tapper',    desc:'+1 orb / sec',      base:60,    tap:0,  cps:1},
-  {id:'queue',   name:'Queue Buddy',    desc:'+5 orbs / sec',     base:300,   tap:0,  cps:5},
-  {id:'kiosk',   name:'Orb Kiosk',      desc:'+20 orbs / sec',    base:1500,  tap:0,  cps:20},
-  {id:'factory', name:'Orb Factory',    desc:'+90 orbs / sec',    base:8000,  tap:0,  cps:90},
-  {id:'portal',  name:'Orb Portal',     desc:'+400 orbs / sec',   base:42000, tap:0,  cps:400},
+/* ==================== data ==================== */
+const BUILDINGS = [
+  {id:'cursor',  name:'Cursor',       icon:'\u{1F446}', base:15,     cps:0.1,    quote:'Autoclicks once every 10 seconds.'},
+  {id:'grandma', name:'Grandma',      icon:'\u{1F475}', base:100,    cps:1,      quote:'A nice grandma to bake more cookies.'},
+  {id:'farm',    name:'Farm',         icon:'\u{1F33E}', base:1100,   cps:8,      quote:'Grows cookie plants from cookie seeds.'},
+  {id:'mine',    name:'Mine',         icon:'⛏️', base:12000,  cps:47,  quote:'Mines out cookie dough and chocolate chips.'},
+  {id:'factory', name:'Factory',      icon:'\u{1F3ED}', base:130000, cps:260,    quote:'Produces large quantities of industrial cookies.'},
+  {id:'bank',    name:'Bank',         icon:'\u{1F3E6}', base:1.4e6,  cps:1400,   quote:'Generates cookies from interest.'},
+  {id:'temple',  name:'Temple',       icon:'\u{1F6D5}', base:2e7,    cps:7800,   quote:'Full of precious, ancient chocolate.'},
+  {id:'wizard',  name:'Wizard Tower', icon:'\u{1F9D9}', base:3.3e8,  cps:44000,  quote:'Summons cookies with magic spells.'},
+  {id:'ship',    name:'Shipment',     icon:'\u{1F680}', base:5.1e9,  cps:260000, quote:'Brings in fresh cookies from the cookie planet.'},
+  {id:'lab',     name:'Alchemy Lab',  icon:'⚗️', base:7.5e10, cps:1.6e6, quote:'Turns gold into cookies!'},
 ];
-const SAVE_KEY = 'novo-clicker-v1';
 
-let S = {orbs:0, total:0, owned:{}, mult:1};
+const UPGRADES = [
+  // click upgrades (also boost cursors)
+  {id:'u_click1', name:'Reinforced index finger', icon:'\u{1F446}', cost:100,   req:s=>s.owned.cursor>=1,  fx:{click:2, b:'cursor'}, quote:'prod prod'},
+  {id:'u_click2', name:'Carpal tunnel prevention cream', icon:'\u{1F9F4}', cost:500, req:s=>s.owned.cursor>=1, fx:{click:2, b:'cursor'}, quote:'it... it hurts to click...'},
+  {id:'u_click3', name:'Ambidextrous', icon:'✌️', cost:10000, req:s=>s.owned.cursor>=10, fx:{click:2, b:'cursor'}, quote:'Look ma, both hands!'},
+  {id:'u_click4', name:'Thousand fingers', icon:'\u{1FAF0}', cost:100000, req:s=>s.owned.cursor>=25, fx:{click:2, b:'cursor'}, quote:'clickity'},
+  // building upgrades: [tier cost multiplier vs base, owned requirement]
+  {id:'u_gr1', name:'Forwards from grandma', icon:'\u{1F48C}', cost:1000,  req:s=>s.owned.grandma>=1,  fx:{b:'grandma'}, quote:"RE:RE:thought you'd get a kick out of this ;))"},
+  {id:'u_gr2', name:'Steel-plated rolling pins', icon:'\u{1F94D}', cost:5000, req:s=>s.owned.grandma>=5, fx:{b:'grandma'}, quote:'Just what you kneaded.'},
+  {id:'u_gr3', name:'Lubricated dentures', icon:'\u{1F9B7}', cost:50000, req:s=>s.owned.grandma>=25, fx:{b:'grandma'}, quote:'squish'},
+  {id:'u_fa1', name:'Cheap hoes', icon:'\u{1F9BE}', cost:11000, req:s=>s.owned.farm>=1, fx:{b:'farm'}, quote:'Rake in the dough!'},
+  {id:'u_fa2', name:'Fertilizer', icon:'\u{1F4A9}', cost:55000, req:s=>s.owned.farm>=5, fx:{b:'farm'}, quote:"It's chocolate, I swear."},
+  {id:'u_fa3', name:'Cookie trees', icon:'\u{1F333}', cost:550000, req:s=>s.owned.farm>=25, fx:{b:'farm'}, quote:'A relative of the breadfruit.'},
+  {id:'u_mi1', name:'Sugar gas', icon:'\u{1F4A8}', cost:120000, req:s=>s.owned.mine>=1, fx:{b:'mine'}, quote:'A pink, volatile gas.'},
+  {id:'u_mi2', name:'Megadrill', icon:'\u{1F529}', cost:600000, req:s=>s.owned.mine>=5, fx:{b:'mine'}, quote:"You're in deep."},
+  {id:'u_mi3', name:'Ultradrill', icon:'⚙️', cost:6e6, req:s=>s.owned.mine>=25, fx:{b:'mine'}, quote:'Finally caved in?'},
+  {id:'u_fc1', name:'Sturdier conveyor belts', icon:'\u{1F517}', cost:1.3e6, req:s=>s.owned.factory>=1, fx:{b:'factory'}, quote:"You're going places."},
+  {id:'u_fc2', name:'Child labor', icon:'\u{1F476}', cost:6.5e6, req:s=>s.owned.factory>=5, fx:{b:'factory'}, quote:'Cheaper, healthier workforce.'},
+  {id:'u_fc3', name:'Sweatshop', icon:'\u{1FA21}', cost:6.5e7, req:s=>s.owned.factory>=25, fx:{b:'factory'}, quote:'Slackers will be terminated.'},
+  {id:'u_ba1', name:'Taller tellers', icon:'\u{1F9CD}', cost:1.4e7, req:s=>s.owned.bank>=1, fx:{b:'bank'}, quote:'Able to grab more money.'},
+  {id:'u_ba2', name:'Scissor-resistant credit cards', icon:'\u{1F4B3}', cost:7e7, req:s=>s.owned.bank>=5, fx:{b:'bank'}, quote:'For those overspending days.'},
+  {id:'u_te1', name:'Golden idols', icon:'\u{1F5FF}', cost:2e8, req:s=>s.owned.temple>=1, fx:{b:'temple'}, quote:'Lure grandmas into your temples.'},
+  {id:'u_te2', name:'Sacrifices', icon:'\u{1F52A}', cost:1e9, req:s=>s.owned.temple>=5, fx:{b:'temple'}, quote:'What a lovely day to be a knife.'},
+  {id:'u_wi1', name:'Pointier hats', icon:'\u{1F3A9}', cost:3.3e9, req:s=>s.owned.wizard>=1, fx:{b:'wizard'}, quote:'Tests have shown increased magic.'},
+  {id:'u_wi2', name:'Beardlier beards', icon:'\u{1F9D4}', cost:1.65e10, req:s=>s.owned.wizard>=5, fx:{b:'wizard'}, quote:"Haven't you heard? It's all in the beard."},
+  {id:'u_sh1', name:'Vanilla nebulae', icon:'\u{1F30C}', cost:5.1e10, req:s=>s.owned.ship>=1, fx:{b:'ship'}, quote:'If you removed your space helmet, you could probably smell it.'},
+  {id:'u_la1', name:'Antimony', icon:'\u{1F9EA}', cost:7.5e11, req:s=>s.owned.lab>=1, fx:{b:'lab'}, quote:'Actually worth a lot of mony.'},
+];
+
+const NEWS = [
+  'You feel like making cookies. But nobody wants to eat your cookies.',
+  'Your first batch goes to the trash. The neighborhood raccoon barely touches it.',
+  'Your family accepts to try some of your cookies.',
+  'Your cookies are popular at the local school.',
+  'News: cookie sales on the rise!',
+  'News: "cookies are the new craze", claims local elder.',
+  'Cookie shipments are booming worldwide!',
+  'News: obesity epidemic strikes nation; experts blame cookies.',
+  'News: cookie-based economy "not a bubble", insists local banker.',
+  'Doctors warn against the dangers of cookie withdrawal.',
+  'News: "all I see when I close my eyes is cookies", reports local worker.',
+  "Cookies are now the world's leading export, ahead of oil.",
+  'The moon is now 3% cookie, say scientists.',
+];
+const NEWS_GRANDMA = [
+  'News: elderly women are on the rise; sources report a "faint smell of dough".',
+  'Your grandmas are complaining about the working conditions. And the dental plan.',
+  'News: nursing homes report a mysterious exodus of grandmas.',
+];
+
+/* ==================== state ==================== */
+const SAVE_KEY = 'cookie-clone-v1';
+let S = {cookies:0, total:0, clicks:0, owned:{}, upg:[], name:'Kunal', seen:0};
 try{
   const raw = localStorage.getItem(SAVE_KEY);
-  if(raw){ const p = JSON.parse(raw); if(p && typeof p.orbs==='number') S = Object.assign(S, p); }
+  if(raw){ const p = JSON.parse(raw); if(p && typeof p.cookies==='number') S = Object.assign(S, p); }
 }catch(e){}
-DEFS.forEach(d => { if(!(d.id in S.owned)) S.owned[d.id] = 0; });
+BUILDINGS.forEach(b => { if(!(b.id in S.owned)) S.owned[b.id] = 0; });
+if(!Array.isArray(S.upg)) S.upg = [];
 
-const cost   = d => Math.ceil(d.base * Math.pow(1.15, S.owned[d.id]));
-const tapPow = () => 1 + DEFS.reduce((a,d)=>a + d.tap*S.owned[d.id], 0);
-const cps    = () => DEFS.reduce((a,d)=>a + d.cps*S.owned[d.id], 0);
-const fmt    = n => {
-  if(n >= 1e9) return (n/1e9).toFixed(1)+'B';
-  if(n >= 1e6) return (n/1e6).toFixed(1)+'M';
-  if(n >= 1e4) return (n/1e3).toFixed(1)+'K';
-  return Math.floor(n).toLocaleString('en-IN');
+let buyAmt = 1, sellMode = false;
+let frenzy = 1, frenzyEnd = 0;
+
+const has = id => S.upg.includes(id);
+const bMult = id => Math.pow(2, UPGRADES.filter(u => has(u.id) && u.fx.b === id).length);
+const clickPow = () => {
+  let p = 1 * Math.pow(2, UPGRADES.filter(u => has(u.id) && u.fx.click).length);
+  return p * frenzy;
 };
+const cps = () => BUILDINGS.reduce((a,b) => a + b.cps * S.owned[b.id] * bMult(b.id), 0);
+const cost = (b, k) => Math.ceil(b.base * Math.pow(1.15, S.owned[b.id] + k));
+const bulkCost = b => { let t = 0; for(let i=0;i<buyAmt;i++) t += cost(b, i); return t; };
+const bulkSell = b => { let t = 0, n = Math.min(buyAmt, S.owned[b.id]); for(let i=1;i<=n;i++) t += Math.ceil(0.25 * b.base * Math.pow(1.15, S.owned[b.id]-i)); return t; };
 
-/* ---------------- dom ---------------- */
-const $ = id => document.getElementById(id);
-const scoreEl = $('score'), cpsEl = $('cpsVal'), tapEl = $('tapVal');
-const orb = $('orb'), stage = document.querySelector('.stage');
-const itemsEl = $('items'), golden = $('golden');
-
-/* build shop cards once */
-const cards = {};
-DEFS.forEach(d => {
-  const el = document.createElement('div');
-  el.className = 'item locked';
-  el.innerHTML = `<div class="iOwn" id="own-${d.id}">0</div>
-    <div class="iName">${d.name}</div>
-    <div class="iDesc">${d.desc}</div>
-    <div class="iCost" id="cost-${d.id}"></div>`;
-  el.addEventListener('pointerdown', e => { e.preventDefault(); buy(d); });
-  itemsEl.appendChild(el);
-  cards[d.id] = el;
-});
-
-function paint(){
-  scoreEl.textContent = fmt(S.orbs);
-  cpsEl.textContent = fmt(cps());
-  tapEl.textContent = fmt(tapPow());
-  DEFS.forEach(d => {
-    const c = cost(d);
-    $('cost-'+d.id).textContent = fmt(c);
-    $('own-'+d.id).textContent = S.owned[d.id];
-    cards[d.id].classList.toggle('can', S.orbs >= c);
-    cards[d.id].classList.toggle('locked', S.orbs < c && S.owned[d.id] === 0 && S.total < d.base*0.4);
-  });
+/* ==================== formatting ==================== */
+const NAMES = [[1e21,'sextillion'],[1e18,'quintillion'],[1e15,'quadrillion'],[1e12,'trillion'],[1e9,'billion'],[1e6,'million']];
+function fmt(n){
+  n = Math.floor(n);
+  for(const [v,w] of NAMES) if(n >= v) return (Math.floor(n/v*1000)/1000).toFixed(3)+' '+w;
+  return n.toLocaleString('en-US');
+}
+function fmtShort(n){
+  n = Math.floor(n);
+  for(const [v,w] of NAMES) if(n >= v) return (Math.floor(n/v*100)/100)+' '+w;
+  return n.toLocaleString('en-US');
 }
 
-/* ---------------- audio ---------------- */
-let AC = null;
-function beep(f, dur=0.06, gain=0.12, type='sine'){
+/* ==================== dom ==================== */
+const $ = id => document.getElementById(id);
+const countEl=$('cookieCount'), cpsEl=$('cpsLine'), nameEl=$('bakeryName');
+const bigCookie=$('bigCookie'), zone=$('cookieZone');
+const shelf=$('upgradeShelf'), products=$('products'), view=$('buildingsView');
+const tickerText=$('tickerText'), tooltip=$('tooltip'), golden=$('golden'), banner=$('banner');
+
+/* chips on the big cookie */
+[[26,20,17,11],[55,30,13,9],[38,52,19,13],[66,58,14,10],[18,62,12,8],[48,76,15,10],[72,34,10,8]].forEach(([x,y,w,h],i)=>{
+  const c = document.createElement('div');
+  c.className='chip';
+  c.style.cssText = `left:${x}%;top:${y}%;width:${w}%;height:${h}%;border-radius:${45+i*3}% ${60-i*4}% 55% 48%;transform:rotate(${i*37}deg)`;
+  bigCookie.appendChild(c);
+});
+
+nameEl.textContent = S.name + "'s bakery";
+nameEl.addEventListener('click', () => {
+  const n = prompt('Name your bakery:', S.name);
+  if(n && n.trim()){ S.name = n.trim().slice(0,24); nameEl.textContent = S.name + "'s bakery"; save(); }
+});
+
+/* ==================== audio ==================== */
+let AC=null;
+function beep(f,dur=0.05,g=0.08,type='sine'){
   try{
     if(!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
-    const o = AC.createOscillator(), g = AC.createGain();
-    o.type = type; o.frequency.value = f;
-    g.gain.setValueAtTime(gain, AC.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime+dur);
-    o.connect(g); g.connect(AC.destination);
-    o.start(); o.stop(AC.currentTime+dur);
+    const o=AC.createOscillator(), gn=AC.createGain();
+    o.type=type;o.frequency.value=f;
+    gn.gain.setValueAtTime(g,AC.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+    o.connect(gn);gn.connect(AC.destination);o.start();o.stop(AC.currentTime+dur);
   }catch(e){}
 }
 
-/* ---------------- particles ---------------- */
-const fx = $('fx'), fc = fx.getContext('2d');
-let parts = [];
-function sizeFx(){
-  fx.width = stage.clientWidth * devicePixelRatio;
-  fx.height = stage.clientHeight * devicePixelRatio;
-  fc.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
-}
-addEventListener('resize', sizeFx); sizeFx();
+/* ==================== particles (left) ==================== */
+const fx=$('fxL'), fc=fx.getContext('2d');
+let parts=[];
+function sizeFx(){ fx.width=zone.clientWidth*devicePixelRatio; fx.height=zone.clientHeight*devicePixelRatio; fc.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);}
+addEventListener('resize',sizeFx); sizeFx();
 
-function burst(x, y, n, color){
-  for(let i=0;i<n;i++){
-    const a = Math.random()*Math.PI*2, sp = 60+Math.random()*160;
-    parts.push({x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-40, r:2+Math.random()*3, life:1, color});
-  }
-}
-
-/* ---------------- tap ---------------- */
-function floatText(x, y, txt, bonus){
-  const f = document.createElement('div');
-  f.className = 'float' + (bonus ? ' bonus' : '');
-  f.textContent = txt;
-  f.style.left = (x-14)+'px'; f.style.top = (y-14)+'px';
-  stage.appendChild(f);
-  setTimeout(()=>f.remove(), 900);
-}
-
-orb.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  const gain = tapPow() * S.mult;
-  S.orbs += gain; S.total += gain;
-  const r = stage.getBoundingClientRect();
+/* ==================== big cookie click ==================== */
+bigCookie.addEventListener('pointerdown', e => {
+  const gain = clickPow();
+  S.cookies += gain; S.total += gain; S.clicks++;
+  const r = zone.getBoundingClientRect();
   const x = e.clientX - r.left, y = e.clientY - r.top;
-  floatText(x, y, '+'+fmt(gain), S.mult>1);
-  burst(x, y, 8, S.mult>1 ? '198,0,126' : '177,213,242');
-  orb.classList.add('squish');
-  setTimeout(()=>orb.classList.remove('squish'), 80);
-  beep(520 + Math.random()*80, .05, .1);
-  if(navigator.vibrate) navigator.vibrate(8);
-  paint();
+  const f = document.createElement('div');
+  f.className='floatUp'; f.textContent='+'+fmtShort(gain);
+  f.style.left=(x-10)+'px'; f.style.top=(y-24)+'px';
+  zone.appendChild(f); setTimeout(()=>f.remove(),1100);
+  for(let i=0;i<7;i++){
+    const a=Math.random()*Math.PI*2, sp=50+Math.random()*130;
+    parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-60,r:2+Math.random()*3.5,life:1,
+      col:Math.random()<0.3?'62,36,18':'201,141,78'});
+  }
+  bigCookie.classList.add('squish'); setTimeout(()=>bigCookie.classList.remove('squish'),70);
+  beep(440+Math.random()*120,.04,.06);
+  if(navigator.vibrate) navigator.vibrate(6);
+  paintCounts();
 });
 
-/* ---------------- buy ---------------- */
-function buy(d){
-  const c = cost(d);
-  if(S.orbs < c){ beep(160, .08, .08, 'square'); return; }
-  S.orbs -= c; S.owned[d.id]++;
-  beep(740, .07, .12); setTimeout(()=>beep(980, .09, .12), 70);
-  if(navigator.vibrate) navigator.vibrate([10,30,10]);
-  paint(); save();
+/* ==================== store build ==================== */
+const prodEls={};
+BUILDINGS.forEach(b=>{
+  const el=document.createElement('div');
+  el.className='prod locked';
+  el.innerHTML=`<span class="pIcon">${b.icon}</span>
+    <span><span class="pName">???</span><br><span class="pPrice no">\u{1F36A} ${fmt(b.base)}</span></span>
+    <span class="pOwn"></span>`;
+  el.addEventListener('click',()=>{ sellMode ? sell(b) : buy(b); });
+  el.addEventListener('mouseenter',e=>showTip(prodTip(b), el));
+  el.addEventListener('mouseleave',hideTip);
+  products.appendChild(el);
+  prodEls[b.id]=el;
+});
+
+function prodTip(b){
+  const known = S.total >= b.base*0.5 || S.owned[b.id]>0;
+  const each = b.cps*bMult(b.id);
+  return `<b>${known?b.name:'???'}</b><div class="tPrice">${sellMode?'sell for \u{1F36A} '+fmt(bulkSell(b)):'\u{1F36A} '+fmt(bulkCost(b))}</div>
+    ${S.owned[b.id]?`<div>each ${b.name.toLowerCase()} produces <b>${fmtShort(each)}</b> cookies per second<br>
+    ${S.owned[b.id]} of them producing <b>${fmtShort(each*S.owned[b.id])}</b> /sec total</div>`:''}
+    <div class="tQuote">${known?b.quote:''}</div>`;
 }
 
-/* ---------------- golden bonus orb ---------------- */
-let goldTimer = 0;
+function buy(b){
+  const c=bulkCost(b);
+  if(S.cookies < c){ beep(150,.08,.06,'square'); return; }
+  S.cookies -= c; S.owned[b.id] += buyAmt;
+  beep(660,.06,.09); setTimeout(()=>beep(880,.08,.09),60);
+  renderAll(); save();
+}
+function sell(b){
+  const n=Math.min(buyAmt,S.owned[b.id]);
+  if(n<=0) return;
+  S.cookies += bulkSell(b); S.owned[b.id] -= n;
+  beep(300,.08,.08,'triangle');
+  renderAll(); save();
+}
+
+/* qty + sell buttons */
+document.querySelectorAll('.qAmt').forEach(el=>{
+  el.addEventListener('click',()=>{
+    buyAmt = +el.dataset.n;
+    document.querySelectorAll('.qAmt').forEach(x=>x.classList.toggle('sel',x===el));
+    renderStore();
+  });
+});
+$('sellBtn').addEventListener('click',()=>{
+  sellMode=!sellMode;
+  $('sellBtn').classList.toggle('sel',sellMode);
+  renderStore();
+});
+
+/* upgrades shelf */
+function renderShelf(){
+  shelf.innerHTML='';
+  UPGRADES.filter(u=>!has(u.id) && u.req(S)).forEach(u=>{
+    const el=document.createElement('div');
+    el.className='upg '+(S.cookies>=u.cost?'can':'cant');
+    el.textContent=u.icon;
+    el.addEventListener('click',()=>{
+      if(S.cookies<u.cost){ beep(150,.08,.06,'square'); return; }
+      S.cookies-=u.cost; S.upg.push(u.id);
+      beep(740,.07,.1); setTimeout(()=>beep(1100,.1,.1),70);
+      hideTip(); renderAll(); save();
+    });
+    el.addEventListener('mouseenter',()=>{
+      const target = u.fx.click ? 'clicking and cursors are' : (BUILDINGS.find(b=>b.id===u.fx.b)||{name:'?'}).name+'s are';
+      showTip(`<b>${u.name}</b><div class="tPrice">\u{1F36A} ${fmt(u.cost)}</div><div>${target} <b>twice</b> as efficient.</div><div class="tQuote">"${u.quote}"</div>`, el);
+    });
+    el.addEventListener('mouseleave',hideTip);
+    shelf.appendChild(el);
+  });
+}
+
+/* tooltip */
+function showTip(html, el){
+  tooltip.innerHTML=html; tooltip.style.display='block';
+  const r=el.getBoundingClientRect(), tw=tooltip.offsetWidth;
+  let x=r.left-tw-12; if(x<4) x=r.right+12;
+  tooltip.style.left=x+'px';
+  tooltip.style.top=Math.min(innerHeight-tooltip.offsetHeight-8, Math.max(8,r.top))+'px';
+}
+function hideTip(){ tooltip.style.display='none'; }
+
+/* ==================== render ==================== */
+function paintCounts(){
+  countEl.textContent = fmtShort(S.cookies)+' cookie'+(Math.floor(S.cookies)===1?'':'s');
+  const c = cps()*frenzy;
+  cpsEl.textContent = 'per second: '+(c<1000 ? (Math.round(c*10)/10).toLocaleString('en-US') : fmtShort(c))+(frenzy>1?' (FRENZY x'+frenzy+')':'');
+  document.title = fmtShort(S.cookies)+' cookies - Cookie Clicker';
+}
+function renderStore(){
+  BUILDINGS.forEach((b,i)=>{
+    const el=prodEls[b.id];
+    const known = i===0 || S.total >= b.base*0.5 || S.owned[b.id]>0;
+    const visible = i<2 || S.total >= b.base*0.15 || S.owned[b.id]>0 ||
+      (i>0 && (S.owned[BUILDINGS[i-1].id]>0 || S.total>=BUILDINGS[i-1].base*0.5));
+    el.classList.toggle('hidden', !visible);
+    el.classList.toggle('locked', !known);
+    el.querySelector('.pName').textContent = known ? b.name : '???';
+    const priceEl=el.querySelector('.pPrice');
+    if(sellMode){
+      priceEl.textContent='\u{1F36A} '+fmt(bulkSell(b))+' (sell '+Math.min(buyAmt,S.owned[b.id])+')';
+      priceEl.className='pPrice ok';
+    }else{
+      priceEl.textContent='\u{1F36A} '+fmt(bulkCost(b));
+      priceEl.className='pPrice '+(S.cookies>=bulkCost(b)?'ok':'no');
+    }
+    el.querySelector('.pOwn').textContent = S.owned[b.id]||'';
+  });
+  renderShelf();
+}
+function renderView(){
+  view.innerHTML='';
+  BUILDINGS.forEach(b=>{
+    if(!S.owned[b.id]) return;
+    const row=document.createElement('div');
+    row.className='bRow';
+    const n=Math.min(S.owned[b.id],80);
+    let icons='';
+    for(let i=0;i<n;i++) icons+=`<span style="animation-delay:${(i%7)*0.35}s">${b.icon}</span>`;
+    row.innerHTML=`<div class="bTag outline">${b.name} × ${S.owned[b.id]}</div><div class="icons">${icons}</div>`;
+    view.appendChild(row);
+  });
+}
+function renderAll(){ paintCounts(); renderStore(); renderView(); }
+
+/* ==================== news ticker ==================== */
+let newsI=0;
+function rotateNews(){
+  tickerText.style.opacity=0;
+  setTimeout(()=>{
+    let pool=NEWS.slice(0, Math.max(3, Math.min(NEWS.length, 3+Math.floor(Math.log10(S.total+1)*2))));
+    if(S.owned.grandma>0) pool=pool.concat(NEWS_GRANDMA);
+    newsI=(newsI+1+Math.floor(Math.random()*(pool.length-1)))%pool.length;
+    tickerText.textContent=pool[newsI];
+    tickerText.style.opacity=1;
+  },400);
+}
+tickerText.textContent=NEWS[0];
+setInterval(rotateNews,9000);
+
+/* ==================== golden cookie ==================== */
+let goldT = 20+Math.random()*40;
 function spawnGolden(){
-  const w = stage.clientWidth, h = stage.clientHeight;
-  golden.style.left = (30 + Math.random()*(w-120))+'px';
-  golden.style.top  = (20 + Math.random()*(h-100))+'px';
-  golden.style.display = 'block';
-  setTimeout(()=>{ golden.style.display='none'; }, 5000);
+  golden.style.left=(60+Math.random()*(innerWidth-460))+'px';
+  golden.style.top=(80+Math.random()*(innerHeight-220))+'px';
+  golden.style.display='block';
+  setTimeout(()=>{golden.style.display='none';},13000);
 }
-golden.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  golden.style.display = 'none';
-  S.mult = 5;
-  beep(880,.1,.14); setTimeout(()=>beep(1180,.12,.14),90); setTimeout(()=>beep(1480,.16,.14),200);
-  const r = stage.getBoundingClientRect();
-  floatText(e.clientX-r.left, e.clientY-r.top, 'x5 FRENZY!', true);
-  burst(e.clientX-r.left, e.clientY-r.top, 26, '198,0,126');
-  setTimeout(()=>{ S.mult = 1; paint(); }, 10000);
-  paint();
+golden.addEventListener('pointerdown',()=>{
+  golden.style.display='none';
+  beep(880,.1,.12); setTimeout(()=>beep(1320,.14,.12),90);
+  if(Math.random()<0.5){
+    const gain=Math.min(S.cookies*0.15, cps()*900)+13;
+    S.cookies+=gain; S.total+=gain;
+    showBanner('Lucky!<br><span style="font-size:16px">+'+fmtShort(gain)+' cookies!</span>');
+  }else{
+    frenzy=7; frenzyEnd=Date.now()+77000;
+    showBanner('Frenzy!<br><span style="font-size:16px">Cookie production x7 for 77 seconds!</span>');
+  }
+  renderAll(); save();
 });
+function showBanner(html){
+  banner.innerHTML=html; banner.style.display='block';
+  banner.style.animation='none'; void banner.offsetWidth; banner.style.animation='';
+  setTimeout(()=>{banner.style.display='none';},3100);
+}
 
-/* ---------------- passive income (wall-clock, survives background/offline) ---------------- */
-let lastEarn = Date.now();
+/* ==================== income (wall-clock) ==================== */
+let lastEarn=Date.now();
 function accrue(){
-  const now = Date.now();
-  let dt = (now - lastEarn)/1000; lastEarn = now;
-  if(dt <= 0) return;
-  dt = Math.min(dt, 2*3600);           // offline catch-up capped at 2h
-  const mult = dt > 1 ? 1 : S.mult;    // frenzy only applies live
-  const inc = cps() * mult * dt;
-  if(inc > 0){ S.orbs += inc; S.total += inc; }
+  const now=Date.now();
+  if(frenzy>1 && now>frenzyEnd){ frenzy=1; }
+  let dt=(now-lastEarn)/1000; lastEarn=now;
+  if(dt<=0) return;
+  dt=Math.min(dt,2*3600);
+  const inc=cps()*(dt>2?1:frenzy)*dt;
+  if(inc>0){ S.cookies+=inc; S.total+=inc; }
 }
-setInterval(() => { accrue(); paint(); }, 1000);   // keeps ticking when rAF is throttled
+setInterval(()=>{accrue(); paintCounts(); renderStore();},1000);
 
-// offline earnings from last session
-if(S.seen && cps() > 0){
-  const away = Math.min((Date.now() - S.seen)/1000, 2*3600);
-  const gain = cps() * away;
-  if(gain > 1){ S.orbs += gain; S.total += gain;
-    setTimeout(()=>floatText(stage.clientWidth/2, stage.clientHeight/2, '+'+fmt(gain)+' while away', true), 400);
+/* offline earnings */
+if(S.seen && cps()>0){
+  const away=Math.min((Date.now()-S.seen)/1000, 2*3600);
+  const gain=cps()*away;
+  if(gain>1){ S.cookies+=gain; S.total+=gain;
+    setTimeout(()=>showBanner('Welcome back!<br><span style="font-size:16px">You earned '+fmtShort(gain)+' cookies while away.</span>'),600);
   }
 }
 
-/* ---------------- loop ---------------- */
-let last = performance.now(), acc = 0, saveAcc = 0;
+/* ==================== main loop ==================== */
+let last=performance.now(), uiAcc=0, saveAcc=0;
 function frame(now){
-  const dt = Math.min((now-last)/1000, 0.25); last = now;
-
+  const dt=Math.min((now-last)/1000,.25); last=now;
   accrue();
-  acc += dt;
-  if(acc > 0.2){ paint(); acc = 0; }
-
-  // golden orb schedule (every 25–45s)
-  goldTimer -= dt;
-  if(goldTimer <= 0){ goldTimer = 25 + Math.random()*20; if(S.total > 50) spawnGolden(); }
-
-  // particles
+  uiAcc+=dt;
+  if(uiAcc>0.25){ paintCounts(); uiAcc=0; }
+  goldT-=dt;
+  if(goldT<=0){ goldT=45+Math.random()*75; if(S.total>100) spawnGolden(); }
   fc.clearRect(0,0,fx.width,fx.height);
-  parts = parts.filter(p => p.life > 0);
+  parts=parts.filter(p=>p.life>0);
   for(const p of parts){
-    p.life -= dt*1.8; p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 320*dt;
-    fc.globalAlpha = Math.max(p.life, 0);
-    fc.fillStyle = `rgb(${p.color})`;
-    fc.beginPath(); fc.arc(p.x, p.y, p.r, 0, 7); fc.fill();
+    p.life-=dt*1.7; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=380*dt;
+    fc.globalAlpha=Math.max(p.life,0);
+    fc.fillStyle=`rgb(${p.col})`;
+    fc.beginPath(); fc.arc(p.x,p.y,p.r,0,7); fc.fill();
   }
-  fc.globalAlpha = 1;
-
-  saveAcc += dt;
-  if(saveAcc > 5){ save(); saveAcc = 0; }
-
+  fc.globalAlpha=1;
+  saveAcc+=dt; if(saveAcc>5){ save(); saveAcc=0; }
   requestAnimationFrame(frame);
 }
 function save(){
-  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({orbs:S.orbs, total:S.total, owned:S.owned, mult:1, seen:Date.now()})); }catch(e){}
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({cookies:S.cookies,total:S.total,clicks:S.clicks,owned:S.owned,upg:S.upg,name:S.name,seen:Date.now()})); }catch(e){}
 }
-addEventListener('visibilitychange', () => { if(document.hidden) save(); });
+addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
 
-paint();
+renderAll();
 requestAnimationFrame(frame);
 })();
 </script>
