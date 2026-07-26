@@ -344,7 +344,7 @@ const SLOGANS = [
 
 /* ==================== state ==================== */
 const SAVE_KEY = 'novo-idle-v1';
-let S = {cookies:0, total:0, clicks:0, owned:{}, upg:[], name:'Kunal', seen:0};
+let S = {cookies:0, total:0, clicks:0, owned:{}, upg:[], name:'', seen:0};
 try{
   const raw = localStorage.getItem(SAVE_KEY);
   if(raw){ const p = JSON.parse(raw); if(p && typeof p.cookies==='number') S = Object.assign(S, p); }
@@ -385,10 +385,12 @@ const shelf=$('upgradeShelf'), products=$('products'), view=$('buildingsView');
 const tickerText=$('tickerText'), tooltip=$('tooltip'), golden=$('golden'), banner=$('banner');
 const sloganText=$('sloganText');
 
-nameEl.textContent = S.name + "'s waiting room";
+if(S.name === 'Kunal') S.name = '';
+const roomLabel = () => S.name ? S.name + "'s waiting room" : 'My waiting room';
+nameEl.textContent = roomLabel();
 nameEl.addEventListener('click', () => {
   const n = prompt('Name your waiting room:', S.name);
-  if(n && n.trim()){ S.name = n.trim().slice(0,24); nameEl.textContent = S.name + "'s waiting room"; save(); }
+  if(n !== null){ S.name = n.trim().slice(0,24); nameEl.textContent = roomLabel(); save(); }
 });
 
 /* ==================== audio ==================== */
