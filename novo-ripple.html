@@ -48,17 +48,19 @@
   }
   @keyframes standPulse{0%,100%{opacity:.85;}50%{opacity:1;}}
 
-  /* official bull, positioned so the ring sits exactly where the logo disc lives */
+  /* official bull, positioned so the ring sits exactly where the logo disc lives.
+     --bw caps the bull at 55vh so the WHOLE mark always fits; ring = 0.306 × bull (logo-exact). */
+  :root{--bw:min(60vmin,55vh);--cx:50%;--cy:40%;}
   #bull{
     position:absolute;left:var(--cx);top:var(--cy);
-    width:70vmin;translate:-22.8% 2.7%;
+    width:var(--bw);translate:-22.8% 2.7%;
     opacity:.26;pointer-events:none;
   }
 
   #disc{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:5;
-    width:22.5vmin;aspect-ratio:1;border-radius:50%;cursor:pointer;
-    border:5.4vmin solid #fff;background:transparent;
+    width:calc(var(--bw)*.306);aspect-ratio:1;border-radius:50%;cursor:pointer;
+    border:calc(var(--bw)*.0728) solid #fff;background:transparent;
     box-shadow:0 0 50px rgba(255,255,255,.3);
     transition:transform .06s ease;
     animation:discBreathe 3.6s ease-in-out infinite;
@@ -71,7 +73,7 @@
 
   .ripple{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:3;
-    width:22.5vmin;aspect-ratio:1;border-radius:50%;pointer-events:none;
+    width:calc(var(--bw)*.306);aspect-ratio:1;border-radius:50%;pointer-events:none;
     border:3px solid rgba(255,255,255,.65);
     box-shadow:0 0 24px rgba(255,255,255,.35), inset 0 0 24px rgba(255,255,255,.2);
     animation:rip 1.7s cubic-bezier(.16,.6,.4,1) forwards;
@@ -134,6 +136,10 @@
     #timer{font-size:46px;}
     footer img{width:70px;}
     #claim{font-size:9.5px;letter-spacing:2px;}
+  }
+  /* portrait: bigger composition, nudged left so the whole bull fits the narrow width */
+  @media (orientation:portrait){
+    :root{--bw:min(69vmin,55vh);--cx:44%;}
   }
   @media (prefers-reduced-motion:reduce){
     .ripple{animation-duration:.5s;}
@@ -200,17 +206,14 @@ try{
   if(raw){const p=JSON.parse(raw); if(p&&typeof p.best==='number') S=Object.assign(S,p);}
 }catch(e){}
 
-const CX='50%', CY='50.5%';
 const $=id=>document.getElementById(id);
 const world=$('world'), disc=$('disc'), timerEl=$('timer'), tapsEl=$('tapsLine'), hint=$('hint');
-[...document.querySelectorAll('#disc,#bull')].forEach(el=>{el.style.setProperty('--cx',CX);el.style.setProperty('--cy',CY);});
 
-/* standing rings — sizes measured from the approved reference frame */
+/* standing rings — sizes measured from the approved reference frame (center via CSS vars) */
 [64,105,144,185].forEach((size,i)=>{
   const d=document.createElement('div');
   d.className='standing';
   d.style.width=size+'vmin'; d.style.height=size+'vmin';
-  d.style.setProperty('--cx',CX); d.style.setProperty('--cy',CY);
   d.style.setProperty('--o',(0.07-i*0.005).toFixed(3));
   d.style.animationDelay=(i*0.7)+'s';
   world.insertBefore(d, world.firstChild);
@@ -238,7 +241,6 @@ let taps=0, endAt=0, tickInt=0;
 function rippleFx(){
   const r=document.createElement('div');
   r.className='ripple';
-  r.style.setProperty('--cx',CX); r.style.setProperty('--cy',CY);
   world.appendChild(r);
   setTimeout(()=>r.remove(),1800);
 }
