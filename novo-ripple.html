@@ -20,16 +20,21 @@
   /* ---------- header ---------- */
   header{
     position:fixed;top:0;left:0;right:0;z-index:10;
-    padding:18px 22px 0;text-align:center;pointer-events:none;
+    padding:16px 22px 0;text-align:center;pointer-events:none;
   }
   .eyebrow{font-size:10px;letter-spacing:3.5px;font-weight:700;color:rgba(255,255,255,.75);}
-  #score{
-    font-size:44px;font-weight:800;line-height:1.05;margin-top:6px;
+  #timer{
+    font-size:52px;font-weight:800;line-height:1.05;margin-top:4px;
     text-shadow:0 2px 20px rgba(0,25,101,.35);font-variant-numeric:tabular-nums;
+    transition:color .2s;
   }
-  .scoreLbl{font-size:10.5px;letter-spacing:4px;font-weight:700;color:rgba(255,255,255,.8);margin-top:2px;}
+  #timer.low{color:#FF9AD1;}
+  #tapsLine{
+    font-size:15px;font-weight:800;letter-spacing:2.5px;margin-top:2px;
+    color:rgba(255,255,255,.95);font-variant-numeric:tabular-nums;
+  }
   #hint{
-    margin-top:10px;font-size:12.5px;font-style:italic;font-weight:600;
+    margin-top:8px;font-size:12.5px;font-style:italic;font-weight:600;
     color:rgba(255,255,255,.85);transition:opacity .4s;padding:0 24px;
   }
 
@@ -47,15 +52,15 @@
     position:absolute;left:var(--cx);top:var(--cy);
     width:min(64vmin,560px);translate:-33% -7%;
     opacity:.22;pointer-events:none;
-    clip-path:inset(0 0 34% 0);   /* bull only — hide the wordmark */
+    clip-path:inset(0 0 34% 0);
   }
 
   #disc{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:5;
-    width:min(24vmin,190px);aspect-ratio:1;border-radius:50%;cursor:pointer;
-    border:min(5.2vmin,40px) solid #fff;background:transparent;
+    width:min(26vmin,200px);aspect-ratio:1;border-radius:50%;cursor:pointer;
+    border:min(5.6vmin,42px) solid #fff;background:transparent;
     box-shadow:0 0 50px rgba(255,255,255,.35), inset 0 0 30px rgba(255,255,255,.25);
-    transition:transform .08s ease;
+    transition:transform .06s ease;
     animation:discBreathe 3.6s ease-in-out infinite;
   }
   #disc.squish{transform:scale(.93);}
@@ -66,10 +71,10 @@
 
   .ripple{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:3;
-    width:min(24vmin,190px);aspect-ratio:1;border-radius:50%;pointer-events:none;
+    width:min(26vmin,200px);aspect-ratio:1;border-radius:50%;pointer-events:none;
     border:3px solid rgba(255,255,255,.65);
     box-shadow:0 0 24px rgba(255,255,255,.35), inset 0 0 24px rgba(255,255,255,.2);
-    animation:rip 2.1s cubic-bezier(.16,.6,.4,1) forwards;
+    animation:rip 1.7s cubic-bezier(.16,.6,.4,1) forwards;
   }
   @keyframes rip{
     from{transform:scale(1);opacity:1;}
@@ -78,9 +83,38 @@
   .floatUp{
     position:absolute;z-index:8;font-weight:800;font-size:19px;color:#fff;pointer-events:none;
     text-shadow:0 2px 12px rgba(0,25,101,.6);
-    animation:riseUp 1s ease-out forwards;
+    animation:riseUp .9s ease-out forwards;
   }
   @keyframes riseUp{from{opacity:1;transform:translateY(0);}to{opacity:0;transform:translateY(-64px);}}
+
+  /* ---------- result overlay ---------- */
+  #result{
+    position:fixed;inset:0;z-index:40;display:none;
+    background:rgba(0,25,101,.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    align-items:center;justify-content:center;padding:22px;
+  }
+  #result.on{display:flex;}
+  #card{
+    background:#fff;color:var(--blue);border-radius:24px;
+    padding:30px 30px 26px;max-width:380px;width:100%;text-align:center;
+    box-shadow:0 24px 70px rgba(0,17,63,.5);
+    animation:cardIn .4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes cardIn{from{transform:scale(.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+  #rEyebrow{font-size:10px;letter-spacing:3px;font-weight:700;color:var(--magenta);}
+  #rScore{font-size:64px;font-weight:800;line-height:1;margin-top:8px;font-variant-numeric:tabular-nums;}
+  #rLbl{font-size:11px;letter-spacing:3px;font-weight:700;color:#3B97DE;margin-top:2px;}
+  #rRank{font-size:17px;font-weight:800;margin-top:12px;}
+  #rStats{font-size:12.5px;font-weight:600;color:#66759E;margin-top:6px;line-height:1.6;}
+  #rBest{font-size:12px;font-weight:700;color:var(--magenta);margin-top:4px;}
+  #again{
+    display:inline-block;margin-top:18px;background:var(--blue);color:#fff;
+    border:none;border-radius:50px;padding:13px 40px;cursor:pointer;
+    font-family:inherit;font-size:14px;font-weight:800;letter-spacing:2px;
+  }
+  #again:active{transform:scale(.97);}
+  #rClaim{font-size:9.5px;letter-spacing:1.8px;font-weight:700;color:#66759E;margin-top:16px;line-height:1.7;}
+  #rClaim b{color:var(--blue);}
 
   /* ---------- footer ---------- */
   footer{
@@ -96,26 +130,13 @@
   #claim b{color:#fff;}
   footer img{width:84px;opacity:.95;}
 
-  #banner{
-    position:fixed;left:50%;top:20%;translate:-50% 0;z-index:55;display:none;
-    font-size:25px;font-weight:800;text-align:center;pointer-events:none;color:#fff;
-    text-shadow:0 2px 16px rgba(0,25,101,.7);width:90%;
-    animation:bannerUp 3.4s ease-out forwards;
-  }
-  @keyframes bannerUp{
-    0%{opacity:0;transform:translateY(10px);}
-    8%,75%{opacity:1;transform:translateY(0);}
-    100%{opacity:0;transform:translateY(-26px);}
-  }
-  #banner .sub{font-size:14px;font-weight:600;}
-
   @media (max-width:600px){
-    #score{font-size:38px;}
+    #timer{font-size:46px;}
     footer img{width:70px;}
     #claim{font-size:9.5px;letter-spacing:2px;}
   }
   @media (prefers-reduced-motion:reduce){
-    .ripple{animation-duration:.6s;}
+    .ripple{animation-duration:.5s;}
     .standing,#disc{animation:none;}
   }
 </style>
@@ -124,9 +145,9 @@
 
 <header>
   <div class="eyebrow">NOVO NORDISK · GAMESCOM 2026</div>
-  <div id="score">0</div>
-  <div class="scoreLbl">RIPPLES</div>
-  <div id="hint">Tap the circle. See what one small action can do.</div>
+  <div id="timer">15.0</div>
+  <div id="tapsLine">RIPPLES: 0</div>
+  <div id="hint">Tap the circle to start. 15 seconds. As many ripples as you can.</div>
 </header>
 
 <div id="world">
@@ -134,167 +155,169 @@
   <div id="disc"></div>
 </div>
 
+<div id="result">
+  <div id="card">
+    <div id="rEyebrow">TIME&rsquo;S UP</div>
+    <div id="rScore">0</div>
+    <div id="rLbl">RIPPLES IN 15 SECONDS</div>
+    <div id="rRank"></div>
+    <div id="rStats"></div>
+    <div id="rBest"></div>
+    <button id="again">GO AGAIN</button>
+    <div id="rClaim">SOME THINGS ARE WORTH THE WAIT.<br><b>YOUR HEALTH ISN&rsquo;T.</b></div>
+  </div>
+</div>
+
 <footer>
   <div id="claim">SOME THINGS ARE WORTH THE WAIT.<br><b>YOUR HEALTH ISN&rsquo;T.</b></div>
   <img src="assets/novo-logo-white.png" alt="Novo Nordisk">
 </footer>
-
-<div id="banner"></div>
 
 <script>
 (() => {
 'use strict';
 
 const SAVE_KEY='novo-ripple-v1';
+const ROUND=15;
 const HINTS=[
-  'Tap the circle. See what one small action can do.',
-  'Every ripple starts the same way: one tap.',
-  'Small actions add up. That is the whole secret.',
+  'Tap the circle to start. 15 seconds. As many ripples as you can.',
+  'One tap starts the clock. Then do not stop.',
+  'Two thumbs are legal. Encouraged, even.',
   "Some things are worth the wait. Your health isn't.",
-  'Keep going. The water remembers.',
-  'One glass of water. One stretch. One tap.',
+  'Every ripple starts the same way: one tap.',
 ];
-const MILESTONES=[
-  {at:10,   line:'10 ripples — one small action at a time.'},
-  {at:25,   line:'25 ripples — it is becoming a rhythm.'},
-  {at:50,   line:'50 ripples — the pool is moving.'},
-  {at:100,  line:'100 ripples — your ripples now continue on their own.', auto:true},
-  {at:250,  line:'250 ripples — small actions, visible response.'},
-  {at:500,  line:'500 ripples — the whole queue can see this.'},
-  {at:1000, line:'1,000 ripples — you started with one tap.'},
+const RANKS=[
+  [0,   'Warming up \u{1F4A7}'],
+  [40,  'Steady stream \u{1F30A}'],
+  [70,  'Making waves \u{1F30A}\u{1F30A}'],
+  [100, 'Rapid ripples ⚡'],
+  [130, 'Human tsunami (the friendly kind) \u{1F3C6}'],
 ];
 
-let S={n:0, seen:0};
+let S={best:0, plays:0};
 try{
   const raw=localStorage.getItem(SAVE_KEY);
-  if(raw){const p=JSON.parse(raw); if(p&&typeof p.n==='number') S=Object.assign(S,p);}
+  if(raw){const p=JSON.parse(raw); if(p&&typeof p.best==='number') S=Object.assign(S,p);}
 }catch(e){}
 
-/* center of the disc — slightly above middle, like the reference frame */
 const CX='50%', CY='44%';
-document.documentElement.style.setProperty('--cx',CX);
-document.documentElement.style.setProperty('--cy',CY);
+const $=id=>document.getElementById(id);
+const world=$('world'), disc=$('disc'), timerEl=$('timer'), tapsEl=$('tapsLine'), hint=$('hint');
 [...document.querySelectorAll('#disc,#bull')].forEach(el=>{el.style.setProperty('--cx',CX);el.style.setProperty('--cy',CY);});
 
-const $=id=>document.getElementById(id);
-const world=$('world'), disc=$('disc'), score=$('score'), hint=$('hint'), banner=$('banner');
-
-/* ---------- standing rings (the world remembers your ripples) ---------- */
-function standingCount(){ return Math.min(3 + MILESTONES.filter(m=>S.n>=m.at).length, 10); }
-function renderStanding(){
-  [...world.querySelectorAll('.standing')].forEach(e=>e.remove());
-  const n=standingCount();
-  for(let i=0;i<n;i++){
-    const d=document.createElement('div');
-    d.className='standing';
-    const size=(40+i*32);
-    d.style.width=size+'vmin'; d.style.height=size+'vmin';
-    d.style.setProperty('--cx',CX); d.style.setProperty('--cy',CY);
-    d.style.setProperty('--o',(0.055-i*0.002).toFixed(3));
-    d.style.animationDelay=(i*0.7)+'s';
-    world.insertBefore(d, world.firstChild);
-  }
+/* standing rings */
+for(let i=0;i<5;i++){
+  const d=document.createElement('div');
+  d.className='standing';
+  const size=(40+i*32);
+  d.style.width=size+'vmin'; d.style.height=size+'vmin';
+  d.style.setProperty('--cx',CX); d.style.setProperty('--cy',CY);
+  d.style.setProperty('--o',(0.055-i*0.002).toFixed(3));
+  d.style.animationDelay=(i*0.7)+'s';
+  world.insertBefore(d, world.firstChild);
 }
 
-/* ---------- audio: soft pentatonic drops ---------- */
-let AC=null, combo=0, comboAt=0;
+/* ---------- audio ---------- */
+let AC=null;
 const TONES=[392,440,494,587,659,784,880];
-function pluck(f){
+function pluck(f,g=0.09){
   try{
     if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)();
-    const o=AC.createOscillator(), g=AC.createGain();
+    const o=AC.createOscillator(), gn=AC.createGain();
     o.type='sine'; o.frequency.value=f;
-    g.gain.setValueAtTime(0.10,AC.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.5);
-    o.connect(g); g.connect(AC.destination);
-    o.start(); o.stop(AC.currentTime+0.5);
+    gn.gain.setValueAtTime(g,AC.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.4);
+    o.connect(gn); gn.connect(AC.destination);
+    o.start(); o.stop(AC.currentTime+0.4);
   }catch(e){}
 }
 
-/* ---------- ripple ---------- */
-let autoOn=false, autoTimer=null;
-function ripple(counted, manual){
+/* ---------- game state ---------- */
+let mode='idle';   // idle | run | done
+let taps=0, endAt=0, tickInt=0;
+
+function rippleFx(){
   const r=document.createElement('div');
   r.className='ripple';
   r.style.setProperty('--cx',CX); r.style.setProperty('--cy',CY);
   world.appendChild(r);
-  setTimeout(()=>r.remove(),2200);
-  if(!counted) return;
-  S.n++;
-  score.textContent=S.n.toLocaleString('en-US');
-  if(manual){
-    const now=Date.now();
-    combo = now-comboAt<1600 ? Math.min(combo+1,TONES.length-1) : 0;
-    comboAt=now;
-    pluck(TONES[combo]);
-    if(navigator.vibrate) navigator.vibrate(8);
-  }else{
-    pluck(TONES[0]);
-  }
-  checkMilestones();
-  save();
+  setTimeout(()=>r.remove(),1800);
 }
+
 disc.addEventListener('pointerdown', e=>{
   e.preventDefault();
-  disc.classList.add('squish'); setTimeout(()=>disc.classList.remove('squish'),80);
+  if(mode==='done') return;
+  if(mode==='idle'){
+    mode='run'; taps=0;
+    endAt=Date.now()+ROUND*1000;
+    hint.textContent='GO!';
+    tickInt=setInterval(tick,50);
+  }
+  taps++;
+  tapsEl.textContent='RIPPLES: '+taps;
+  disc.classList.add('squish'); setTimeout(()=>disc.classList.remove('squish'),60);
+  rippleFx();
   const f=document.createElement('div');
   f.className='floatUp'; f.textContent='+1';
   f.style.left=e.clientX+'px'; f.style.top=(e.clientY-30)+'px';
-  document.body.appendChild(f); setTimeout(()=>f.remove(),1000);
-  ripple(true, true);
+  document.body.appendChild(f); setTimeout(()=>f.remove(),900);
+  pluck(TONES[Math.min(Math.floor(taps/10),TONES.length-1)]);
+  if(navigator.vibrate) navigator.vibrate(6);
 });
 
-/* ---------- milestones ---------- */
-let toasted=[];
-function checkMilestones(){
-  for(const m of MILESTONES){
-    if(S.n>=m.at && !toasted.includes(m.at)){
-      toasted.push(m.at);
-      if(S.n===m.at){
-        showBanner(m.at.toLocaleString('en-US')+' RIPPLES<br><span class="sub">'+m.line+'</span>');
-        pluck(TONES[4]); setTimeout(()=>pluck(TONES[6]),140);
-        if(navigator.vibrate) navigator.vibrate([12,40,12]);
-      }
-      renderStanding();
-      if(m.auto) startAuto();
-    }
-  }
-}
-function startAuto(){
-  if(autoOn) return;
-  autoOn=true;
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  autoTimer=setInterval(()=>{ if(!document.hidden) ripple(true,false); },4200);
+function tick(){
+  const left=Math.max(0,(endAt-Date.now())/1000);
+  timerEl.textContent=left.toFixed(1);
+  timerEl.classList.toggle('low',left<=3);
+  if(left<=0) finish();
 }
 
-let bannerTimer=0;
-function showBanner(html){
-  banner.innerHTML=html; banner.style.display='block';
-  banner.style.animation='none'; void banner.offsetWidth; banner.style.animation='';
-  clearTimeout(bannerTimer);
-  bannerTimer=setTimeout(()=>{banner.style.display='none';},3300);
+function finish(){
+  clearInterval(tickInt);
+  mode='done';
+  timerEl.textContent='0.0';
+  const isBest=taps>S.best;
+  if(isBest) S.best=taps;
+  S.plays++;
+  save();
+  // celebratory ripple burst
+  for(let i=0;i<6;i++) setTimeout(rippleFx,i*140);
+  pluck(TONES[4],.11); setTimeout(()=>pluck(TONES[5],.11),130); setTimeout(()=>pluck(TONES[6],.12),260);
+  if(navigator.vibrate) navigator.vibrate([15,40,15,40,25]);
+  // result card
+  $('rScore').textContent=taps.toLocaleString('en-US');
+  let rank=RANKS[0][1];
+  for(const [at,name] of RANKS) if(taps>=at) rank=name;
+  $('rRank').textContent=rank;
+  $('rStats').textContent=(taps/ROUND).toFixed(1)+' ripples per second';
+  $('rBest').textContent=isBest?'\u{1F389} NEW PERSONAL BEST!':'Personal best: '+S.best.toLocaleString('en-US');
+  setTimeout(()=>{$('result').classList.add('on');},700);
 }
 
-/* ---------- hints ---------- */
+$('again').addEventListener('click',()=>{
+  $('result').classList.remove('on');
+  mode='idle'; taps=0;
+  timerEl.textContent=ROUND.toFixed(1);
+  timerEl.classList.remove('low');
+  tapsEl.textContent='RIPPLES: 0';
+  hint.textContent=HINTS[0];
+});
+
+/* ---------- hints (idle only) ---------- */
 let hintI=0;
 setInterval(()=>{
+  if(mode!=='idle') return;
   hint.style.opacity=0;
   setTimeout(()=>{ hintI=(hintI+1)%HINTS.length; hint.textContent=HINTS[hintI]; hint.style.opacity=1; },400);
 },8000);
 
 /* ---------- boot ---------- */
 function save(){
-  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({n:S.n,seen:Date.now()})); }catch(e){}
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({best:S.best,plays:S.plays,seen:Date.now()})); }catch(e){}
 }
 addEventListener('visibilitychange',()=>{ if(document.hidden) save(); });
-
-score.textContent=S.n.toLocaleString('en-US');
-toasted=MILESTONES.filter(m=>S.n>=m.at).map(m=>m.at);
-renderStanding();
-if(S.n>=100) startAuto();
-/* a welcoming ripple so the screen is alive before the first tap */
-setTimeout(()=>ripple(false,false),600);
-setTimeout(()=>ripple(false,false),1400);
+setTimeout(rippleFx,600);
+setTimeout(rippleFx,1400);
 })();
 </script>
 </body>
