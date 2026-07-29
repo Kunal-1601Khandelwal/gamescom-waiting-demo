@@ -50,28 +50,28 @@
 
   #bull{
     position:absolute;left:var(--cx);top:var(--cy);
-    width:min(64vmin,560px);translate:-33% -7%;
-    opacity:.22;pointer-events:none;
+    width:70vmin;translate:-24% 2%;
+    opacity:.26;pointer-events:none;
     clip-path:inset(0 0 34% 0);
   }
 
   #disc{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:5;
-    width:min(26vmin,200px);aspect-ratio:1;border-radius:50%;cursor:pointer;
-    border:min(5.6vmin,42px) solid #fff;background:transparent;
-    box-shadow:0 0 50px rgba(255,255,255,.35), inset 0 0 30px rgba(255,255,255,.25);
+    width:22.5vmin;aspect-ratio:1;border-radius:50%;cursor:pointer;
+    border:5.4vmin solid #fff;background:transparent;
+    box-shadow:0 0 50px rgba(255,255,255,.3);
     transition:transform .06s ease;
     animation:discBreathe 3.6s ease-in-out infinite;
   }
   #disc.squish{transform:scale(.93);}
   @keyframes discBreathe{
-    0%,100%{box-shadow:0 0 50px rgba(255,255,255,.35), inset 0 0 30px rgba(255,255,255,.25);}
-    50%{box-shadow:0 0 80px rgba(255,255,255,.55), inset 0 0 40px rgba(255,255,255,.4);}
+    0%,100%{box-shadow:0 0 50px rgba(255,255,255,.3);}
+    50%{box-shadow:0 0 75px rgba(255,255,255,.5);}
   }
 
   .ripple{
     position:absolute;left:var(--cx);top:var(--cy);translate:-50% -50%;z-index:3;
-    width:min(26vmin,200px);aspect-ratio:1;border-radius:50%;pointer-events:none;
+    width:22.5vmin;aspect-ratio:1;border-radius:50%;pointer-events:none;
     border:3px solid rgba(255,255,255,.65);
     box-shadow:0 0 24px rgba(255,255,255,.35), inset 0 0 24px rgba(255,255,255,.2);
     animation:rip 1.7s cubic-bezier(.16,.6,.4,1) forwards;
@@ -200,22 +200,21 @@ try{
   if(raw){const p=JSON.parse(raw); if(p&&typeof p.best==='number') S=Object.assign(S,p);}
 }catch(e){}
 
-const CX='50%', CY='44%';
+const CX='50%', CY='50.5%';
 const $=id=>document.getElementById(id);
 const world=$('world'), disc=$('disc'), timerEl=$('timer'), tapsEl=$('tapsLine'), hint=$('hint');
 [...document.querySelectorAll('#disc,#bull')].forEach(el=>{el.style.setProperty('--cx',CX);el.style.setProperty('--cy',CY);});
 
-/* standing rings */
-for(let i=0;i<5;i++){
+/* standing rings — sizes measured from the approved reference frame */
+[64,105,144,185].forEach((size,i)=>{
   const d=document.createElement('div');
   d.className='standing';
-  const size=(40+i*32);
   d.style.width=size+'vmin'; d.style.height=size+'vmin';
   d.style.setProperty('--cx',CX); d.style.setProperty('--cy',CY);
-  d.style.setProperty('--o',(0.055-i*0.002).toFixed(3));
+  d.style.setProperty('--o',(0.07-i*0.005).toFixed(3));
   d.style.animationDelay=(i*0.7)+'s';
   world.insertBefore(d, world.firstChild);
-}
+});
 
 /* ---------- audio ---------- */
 let AC=null;
