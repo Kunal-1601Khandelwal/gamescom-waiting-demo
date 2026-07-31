@@ -134,7 +134,7 @@ const Input = {
   axis: 0,                                   // -1..1 analog from the thumbstick
   stick: { id: null, ax: 0, ay: 0, kx: 0, ky: 0, active: false },
   roles: new Map(),                          // pointerId -> 'stick' | 'jump' | 'ripple' | 'ui'
-  keys: {}, pointers: new Map(), tapped: false, tapPos: null
+  keys: {}, pointers: new Map(), tapped: false, tapPos: null, typed: [], confirm: false
 };
 
 addEventListener("keydown", e => {
@@ -143,6 +143,9 @@ addEventListener("keydown", e => {
     if (e.code === "ArrowUp" || e.code === "Space" || e.code === "KeyW") Input.jumpPressed = true;
     if (e.code === "KeyE" || e.code === "ShiftLeft" || e.code === "ArrowDown" || e.code === "KeyS") Input.ripplePressed = true;
     if (e.code === "Escape" || e.code === "KeyP") Game.togglePause();
+    if (e.code === "Enter") Input.confirm = true;
+    if (/^Key[A-Z]$/.test(e.code)) Input.typed.push(e.code.slice(3));
+    if (e.code === "Backspace") Input.typed.push("\b");
     if (e.code === "KeyM") Audio_.on = !Audio_.on;
     Input.tapped = true;
   }
@@ -224,11 +227,17 @@ cv.addEventListener("contextmenu", e => e.preventDefault());
 const QS = new URLSearchParams(location.search || location.hash.replace(/^#/, ""));
 const WARP_STAGE = parseInt(QS.get("stage"), 10);
 const WARP_X = parseFloat(QS.get("x"));
+const WARP_SECS = parseFloat(QS.get("secs"));   // short runs for demos/testing
 
 /* ---------- save -------------------------------------------- */
 const SAVE_KEY = "ripple.save.v1";
 let Save = { unlocked: 1, best: {}, totalRipples: 0 };
 try { Object.assign(Save, JSON.parse(localStorage.getItem(SAVE_KEY) || "{}")); } catch (e) {}
+/* anonymous, per-device, never leaves as anything but a random id — no PII */
+if (!Save.clientId) {
+  Save.clientId = "c-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(Save)); } catch (e) {}
+}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(Save)); } catch (e) {} }
 
 /* ============================================================
@@ -541,6 +550,174 @@ const LEVELS = [
 ];
 
 /* ============================================================
+   DAILY RUN — 90 seconds, procedurally assembled, seeded by the
+   date so every player that day gets identical terrain. That is
+   what makes leaderboard scores comparable at all.
+   ============================================================ */
+const RUN_SECONDS = 90;
+const DEATH_PENALTY = 5;          // seconds, instead of losing the run
+
+function mulberry32(a) {
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/* the show runs in Cologne, so days roll over on Berlin time */
+function berlinDay(ts) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit"
+    }).format(new Date(ts === undefined ? Date.now() : ts));
+  } catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+
+/* Built so it is safe BY CONSTRUCTION rather than by luck: stone spacing
+   is always under LINK_MAX so the bridge never has a hole, and the end
+   stones sit a jumpable height above each shore. */
+function generateRun(seedStr) {
+  const rng = mulberry32(hashStr(seedStr));
+  const R = (a, b) => a + rng() * (b - a);
+  const RI = (a, b) => Math.floor(R(a, b + 1));
+
+  const spans = [], nodes = [], pulses = [], obstacles = [], spikes = [], checkpoints = [];
+  let x = 0, y = 420;
+  spans.push({ t: "flat", w: 560, y });                 // calm run-up
+  x += 560;
+  let lastCheck = 0;
+
+  while (x < 15000) {
+    const gw = RI(280, 430);
+    const gapFrom = x;
+    spans.push({ t: "gap", w: gw });
+    x += gw;
+
+    const landY = Math.round(clamp(y + R(-70, 70), 320, 470));
+    const flatW = RI(380, 660);
+    spans.push({ t: "flat", w: flatW, y: landY });
+
+    /* bridge across the gap — spacing forced under LINK_MAX */
+    const count = Math.max(3, Math.ceil((gw + 40) / 105));
+    const step = (gw + 40) / (count + 1);
+    for (let i = 1; i <= count; i++) {
+      const t = i / (count + 1);
+      const arc = Math.sin(t * Math.PI) * R(26, 62);
+      nodes.push({
+        x: Math.round(gapFrom - 20 + step * i),
+        y: Math.round(lerp(y, landY, t) - 52 - arc),
+        type: (i === count && rng() < 0.3) ? "calm" : "step"
+      });
+    }
+    pulses.push({ x: Math.round(gapFrom + gw / 2), y: Math.round(Math.min(y, landY) - 150) });
+
+    /* populate the landing flat */
+    const fFrom = x, fTo = x + flatW;
+    const nObs = RI(1, 2);
+    for (let i = 0; i < nObs; i++) {
+      const ox = Math.round(R(fFrom + 70, fTo - 70));
+      const roll = rng();
+      if (roll < 0.18)      obstacles.push({ x: ox, type: "blocker" });
+      else if (roll < 0.45) obstacles.push({ x: ox, a: Math.round(ox - 60), b: Math.round(ox + 60), type: "hopper" });
+      else                  obstacles.push({ x: ox, a: Math.round(ox - 70), b: Math.round(ox + 70), type: "walker" });
+    }
+    if (rng() < 0.35 && flatW > 460)
+      spikes.push({ x: Math.round(R(fFrom + 150, fTo - 150)), n: RI(3, 5) });
+    for (let i = 0; i < RI(1, 3); i++)
+      pulses.push({ x: Math.round(R(fFrom + 50, fTo - 50)), up: RI(55, 110) });
+
+    if (fFrom - lastCheck > 1800) { checkpoints.push({ x: Math.round(fFrom + 60), up: 0 }); lastCheck = fFrom; }
+
+    x += flatW;
+    y = landY;
+
+    if (rng() < 0.45) {                                  // a hill for variety
+      const hw = RI(200, 280);
+      const hy = Math.round(clamp(y + R(-80, 80), 320, 470));
+      spans.push({ t: "hill", w: hw, y: hy });
+      x += hw; y = hy;
+    }
+  }
+
+  return {
+    name: "DAILY RUN", water: 640, generated: true,
+    spans, nodes, pulses, obstacles, spikes, checkpoints,
+    goal: { x: x - 120, up: 0 }                          // far beyond 90 seconds of running
+  };
+}
+
+/* ============================================================
+   LEADERBOARD
+   API_BASE = "" keeps everything in localStorage for the demo.
+   Point it at the Worker and the same calls hit the real board.
+   ============================================================ */
+const API_BASE = "";
+const LB_KEY = "ripple.lb.v1";
+const BANNED = /(fuck|shit|cunt|nazi|hitl|rape|dick|cock|piss|slut|fag|arsch|hure|nutte)/i;
+
+function lbLoad() {
+  try { return JSON.parse(localStorage.getItem(LB_KEY)) || { all: [], days: {}, ripples: 0 }; }
+  catch (e) { return { all: [], days: {}, ripples: 0 }; }
+}
+function lbSave(d) { try { localStorage.setItem(LB_KEY, JSON.stringify(d)); } catch (e) {} }
+
+/* a board with nothing on it tells a client nothing — seed the demo once */
+function lbSeed() {
+  const d = lbLoad();
+  if (d.all.length) return;
+  const tags = ["MAX","LNA","JON","KIM","ZOE","RAF","TIM","ANA","LUC","IVY","NIK","SAM","EVA","OMR","PIA","KAI","JAN","MIA","TOM","ELI"];
+  const day = berlinDay();
+  const rng = mulberry32(hashStr(day + "seed"));
+  for (let i = 0; i < tags.length; i++) {
+    const score = Math.round(700 + rng() * 2600);
+    const e = { tag: tags[i], score, bestChain: 2 + Math.floor(rng() * 5), ts: Date.now() - Math.floor(rng() * 8.6e7), day };
+    d.all.push(e);
+    if (rng() < 0.6) (d.days[day] = d.days[day] || []).push(e);
+  }
+  d.ripples = 41000 + Math.floor(rng() * 9000);
+  lbSave(d);
+}
+
+const LB = {
+  async submit(entry) {
+    if (API_BASE) {
+      try {
+        const r = await fetch(API_BASE + "/api/score", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry)
+        });
+        if (r.ok) return r.json();
+      } catch (e) {}
+      /* offline (very likely in a show hall) — queue it and move on */
+      try {
+        const q = JSON.parse(localStorage.getItem("ripple.queue") || "[]");
+        q.push(entry); localStorage.setItem("ripple.queue", JSON.stringify(q));
+      } catch (e) {}
+      return null;
+    }
+    const d = lbLoad();
+    const rec = { tag: entry.tag, score: entry.score, bestChain: entry.bestChain, ts: Date.now(), day: entry.day, me: true };
+    d.all.push(rec);
+    (d.days[entry.day] = d.days[entry.day] || []).push(rec);
+    d.ripples = (d.ripples || 0) + (entry.ripples || 0);
+    lbSave(d);
+    return rec;
+  },
+  board(scope) {
+    const d = lbLoad();
+    const rows = (scope === "day" ? (d.days[berlinDay()] || []) : d.all).slice();
+    rows.sort((a, b) => b.score - a.score || a.ts - b.ts);
+    return rows;
+  },
+  ripples() { return lbLoad().ripples || 0; }
+};
+
+/* ============================================================
    PARTICLES
    ============================================================ */
 const parts = [];
@@ -637,10 +814,12 @@ const Game = {
   levelIdx: 0, level: null,
   t: 0, stateT: 0, camX: 0, camY: 0, shake: 0, transition: 0,
   hearts: 3, score: 0, bestChain: 0, ripplesFired: 0, runTime: 0, jumpsMade: 0,
+  mode: "campaign", timeLeft: 0, deaths: 0, ringsWoken: 0, calmed: 0,
+  day: "", tag: "AAA", tagSlot: 0, submitted: false, boardScope: "day",
   titleBall: { y: 0, vy: 0, rot: 0 }, titleRipples: [],
 
-  loadLevel(i) {
-    const L = LEVELS[i];
+  loadLevel(i, def) {
+    const L = def || LEVELS[i];
     this.levelIdx = i;
     this.score = 0; this.bestChain = 0; this.ripplesFired = 0; this.runTime = 0;
     this.jumpsMade = Save.everJumped ? 3 : 0;   // returning players skip the hint
@@ -708,7 +887,26 @@ const Game = {
     parts.length = 0; floaters.length = 0;
   },
 
-  start(i) { this.loadLevel(i); this.setState("play"); this.transition = 1; },
+  start(i) {
+    this.mode = "campaign";
+    this.loadLevel(i); this.setState("play"); this.transition = 1;
+  },
+
+  startRun() {
+    this.mode = "run";
+    this.day = berlinDay();
+    this.loadLevel(0, generateRun(this.day));
+    this.timeLeft = isFinite(WARP_SECS) ? WARP_SECS : RUN_SECONDS;
+    this.deaths = 0; this.ringsWoken = 0; this.calmed = 0;
+    this.setState("play"); this.transition = 1;
+  },
+
+  endRun() {
+    this.setState("runend");
+    this.tag = (Save.tag || "AAA").toUpperCase().slice(0, 3);
+    this.tagSlot = 0;
+    this.submitted = false;
+  },
   setState(s) { this.state = s; this.stateT = 0; },
   togglePause() {
     if (this.state === "play") this.setState("pause");
@@ -717,8 +915,18 @@ const Game = {
   damage() {
     const b = this.ball;
     if (b.invuln > 0) return;
-    this.hearts--; this.shake = 14; Audio_.hurt();
+    this.shake = 14; Audio_.hurt();
     burst(b.x, b.y, 16, C.warn, 300, 5);
+    /* a timed run never ends early — dying costs seconds, not the attempt.
+       Everyone gets the same 90s, so scores stay comparable. */
+    if (this.mode === "run") {
+      this.deaths++;
+      this.timeLeft = Math.max(0, this.timeLeft - DEATH_PENALTY);
+      floatText(b.x, b.y - 40, "−" + DEATH_PENALTY + "s", 3);
+      this.respawn();
+      return;
+    }
+    this.hearts--;
     if (this.hearts <= 0) { this.setState("gameover"); return; }
     this.setState("dead");
   },
@@ -798,6 +1006,7 @@ function wakeNode(n, depth) {
   const gain = 10 * depth;                      // deeper in the chain = worth more
   Game.score += gain;
   Game.bestChain = Math.max(Game.bestChain, depth);
+  Game.ringsWoken++;
   Audio_.chain(depth);
   burst(n.x, n.y, 8, C.bright, 150, 3, 0);
   floatText(n.x, n.y - 30, "+" + gain, depth);
@@ -806,7 +1015,7 @@ function wakeNode(n, depth) {
 
 function calmObstacle(o, depth) {
   o.calm = true; o.sq = 1;
-  Game.score += 25;
+  Game.score += 25; Game.calmed++;
   Audio_.calm();
   burst(o.x, o.y, 14, C.mid, 200, 4, 200);
   floatText(o.x, o.y - 40, "+25", depth);
@@ -833,6 +1042,10 @@ function hitStall(st, depth) {
 function updatePlay(dt) {
   const L = Game.level, b = Game.ball;
   Game.runTime += dt;
+  if (Game.mode === "run") {
+    Game.timeLeft -= dt;
+    if (Game.timeLeft <= 0) { Game.timeLeft = 0; Game.endRun(); return; }
+  }
 
   /* keyboard is binary, the thumbstick is analog — a gentle tilt rolls slowly,
      which is what you want when lining up on a bridge */
@@ -997,7 +1210,8 @@ function updatePlay(dt) {
   }
 
   L.goal.ph += dt * 2.4;
-  if (L.stallCleared && Math.hypot(b.x - L.goal.x, b.y - (L.goal.y - 46)) < 46) { Game.completeLevel(); return; }
+  if (Game.mode === "campaign" && L.stallCleared &&
+      Math.hypot(b.x - L.goal.x, b.y - (L.goal.y - 46)) < 46) { Game.completeLevel(); return; }
 
   if (b.y - b.r > L.water) { Game.damage(); return; }
   b.x = clamp(b.x, b.r, L.width - b.r);
@@ -1674,7 +1888,19 @@ function drawHUD() {
   const L = Game.level;
   ctx.save();
   drawButton(btns.pause, "pause", false);
-  for (let i = 0; i < 3; i++) drawHeart(62 + i * 24, 30, 1.45, i < Game.hearts);
+  if (Game.mode === "run") {
+    /* the clock IS the pressure in a run, so it gets the prime slot */
+    const t = Math.max(0, Game.timeLeft);
+    const urgent = t <= 10;
+    ctx.textAlign = "left";
+    ctx.font = "900 30px system-ui,sans-serif";
+    ctx.fillStyle = urgent ? C.warn : "#fff";
+    if (urgent) ctx.globalAlpha = 0.55 + Math.abs(Math.sin(Game.t * 6)) * 0.45;
+    ctx.fillText(t.toFixed(1) + "s", 60, 40);
+    ctx.globalAlpha = 1;
+  } else {
+    for (let i = 0; i < 3; i++) drawHeart(62 + i * 24, 30, 1.45, i < Game.hearts);
+  }
 
   ctx.font = "800 12px system-ui,-apple-system,sans-serif";
   ctx.textAlign = "center";
@@ -1834,21 +2060,25 @@ function drawTitle(t, dt) {
   ctx.beginPath(); ctx.arc(0, 4, 6, 0.25 * Math.PI, 0.75 * Math.PI); ctx.stroke();
   ctx.restore();
 
-  ringMark(VW / 2, VH * 0.19, 44, 0.9, t * 1.4);
-  centreText("RIPPLE", VH * 0.40, 62, "#fff", 900);
+  ringMark(VW / 2, VH * 0.17, 38, 0.9, t * 1.4);
+  centreText("RIPPLE", VH * 0.355, 56, "#fff", 900);
   ctx.save(); ctx.globalAlpha = 0.7;
-  centreText("One small action. A much wider response.", VH * 0.40 + 26, 14, "#bcd6ff", 600);
+  centreText("One small action. A much wider response.", VH * 0.355 + 24, 13, "#bcd6ff", 600);
   ctx.restore();
 
-  const play = bigButton("PLAY", VH * 0.60);
-  const info = bigButton("WHY WE'RE HERE", VH * 0.60 + 60, 200, 40, false);
+  const run   = bigButton("DAILY RUN  ·  90s", VH * 0.575, 280);
+  const play  = bigButton("STAGES", VH * 0.575 + 58, 190, 40, false);
+  const board = bigButton("LEADERBOARD", VH * 0.575 + 106, 190, 38, false);
+  const info  = bigButton("WHY WE'RE HERE", VH * 0.575 + 150, 190, 36, false);
   ctx.save(); ctx.globalAlpha = 0.4;
   centreText("drag left to steer   ·   tap the right side to jump   ·   ◎ top-right to ripple      (keys: ← → / ↑ / E)",
     VH - 20, 12, "#fff", 500);
   ctx.restore();
 
-  if (tappedIn(play) || Input.keys.Enter) { Game.setState("select"); Input.tapped = false; }
-  else if (tappedIn(info)) { Game.setState("info"); Input.tapped = false; }
+  if (tappedIn(run) || Input.confirm) { Input.tapped = false; Input.confirm = false; Game.startRun(); }
+  else if (tappedIn(play))  { Game.setState("select"); Input.tapped = false; }
+  else if (tappedIn(board)) { Game.boardScope = "day"; Game.setState("board"); Input.tapped = false; }
+  else if (tappedIn(info))  { Game.setState("info"); Input.tapped = false; }
 }
 
 /* the "why we're here" page from the client brief */
@@ -1957,6 +2187,175 @@ function drawSelect(t) {
   ctx.restore();
 }
 
+/* ---------- name entry + leaderboard ------------------------ */
+const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function drawRunEnd(t) {
+  drawWorld(t);
+  ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.88)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  panel(560, 400);
+  ringMark(VW / 2, VH / 2 - 168, 22, 0.9, t * 1.5);
+  centreText("TIME UP", VH / 2 - 116, 18, C.bright, 900);
+  centreText(String(Game.score), VH / 2 - 74, 46, "#fff", 900);
+  ctx.save(); ctx.globalAlpha = 0.7;
+  centreText(`${Game.ringsWoken} rings  ·  best chain ×${Game.bestChain}  ·  ${Game.calmed} calmed  ·  ${Game.ripplesFired} ripples`,
+    VH / 2 - 48, 11, "#bcd6ff", 600);
+  ctx.restore();
+
+  if (!Game.submitted) {
+    centreText("ENTER YOUR TAG", VH / 2 - 20, 12, "rgba(255,255,255,0.6)", 700);
+    /* typed letters are queued, so a fast typist never loses one to a frame */
+    while (Input.typed.length) {
+      const k = Input.typed.shift();
+      const tg = Game.tag.padEnd(3, "A").split("");
+      if (k === "\b") { Game.tagSlot = Math.max(0, Game.tagSlot - 1); tg[Game.tagSlot] = "A"; }
+      else { tg[Game.tagSlot] = k; Game.tagSlot = Math.min(2, Game.tagSlot + 1); }
+      Game.tag = tg.join("");
+      Audio_.pulse();
+    }
+    /* three arcade slots */
+    for (let i = 0; i < 3; i++) {
+      const x = VW / 2 - 66 + i * 46, y = VH / 2 + 14;
+      const on = i === Game.tagSlot;
+      ctx.save();
+      ctx.fillStyle = on ? "rgba(127,212,255,0.22)" : "rgba(255,255,255,0.07)";
+      roundRect(x - 19, y - 22, 38, 44, 8); ctx.fill();
+      ctx.strokeStyle = on ? C.bright : "rgba(255,255,255,0.25)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = "900 26px system-ui,sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(Game.tag[i] || "A", x, y + 9);
+      ctx.restore();
+      if (Input.tapped && Input.tapPos &&
+          Math.abs(Input.tapPos.x - x) < 22 && Math.abs(Input.tapPos.y - y) < 24) {
+        Game.tagSlot = i; Input.tapped = false;
+      }
+    }
+    /* A–Z grid */
+    const cols = 13, cw = 32, ch = 28;
+    const gx = VW / 2 - (cols * cw) / 2, gy = VH / 2 + 52;
+    for (let i = 0; i < 26; i++) {
+      const cx = gx + (i % cols) * cw, cy = gy + Math.floor(i / cols) * ch;
+      let hot = false;
+      for (const p of Input.pointers.values())
+        if (p.x > cx && p.x < cx + cw - 3 && p.y > cy && p.y < cy + ch - 3) hot = true;
+      ctx.save();
+      ctx.fillStyle = hot ? "rgba(127,212,255,0.25)" : "rgba(255,255,255,0.06)";
+      roundRect(cx, cy, cw - 3, ch - 3, 5); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.font = "700 14px system-ui,sans-serif";
+      ctx.textAlign = "center"; ctx.fillText(ALPHA[i], cx + (cw - 3) / 2, cy + 19);
+      ctx.restore();
+      if (Input.tapped && Input.tapPos &&
+          Input.tapPos.x > cx && Input.tapPos.x < cx + cw && Input.tapPos.y > cy && Input.tapPos.y < cy + ch) {
+        const tg = Game.tag.padEnd(3, "A").split("");
+        tg[Game.tagSlot] = ALPHA[i];
+        Game.tag = tg.join("");
+        Game.tagSlot = Math.min(2, Game.tagSlot + 1);
+        Audio_.pulse(); Input.tapped = false;
+      }
+    }
+    const ok = bigButton("SUBMIT", VH / 2 + 152, 200, 44);
+    if (tappedIn(ok) || Input.confirm) { Input.tapped = false; Input.confirm = false; submitRun(); }
+  } else {
+    centreText("SCORE SUBMITTED", VH / 2 + 4, 14, C.bright, 800);
+    const a = bigButton("LEADERBOARD", VH / 2 + 52, 230, 46);
+    const b = bigButton("RUN AGAIN", VH / 2 + 112, 190, 42, false);
+    if (tappedIn(a)) { Input.tapped = false; Game.boardScope = "day"; Game.setState("board"); }
+    else if (tappedIn(b)) { Input.tapped = false; Game.startRun(); }
+  }
+}
+
+function submitRun() {
+  let tag = (Game.tag || "AAA").toUpperCase().replace(/[^A-Z]/g, "A").slice(0, 3).padEnd(3, "A");
+  if (BANNED.test(tag)) tag = "AAA";
+  Save.tag = tag; persist();
+  LB.submit({
+    tag, mode: "run", seed: Game.day, day: Game.day,
+    score: Game.score, bestChain: Game.bestChain, ripples: Game.ripplesFired,
+    ringsWoken: Game.ringsWoken, calmed: Game.calmed,
+    durationMs: Math.round(RUN_SECONDS * 1000), deaths: Game.deaths,
+    clientId: Save.clientId
+  });
+  Game.submitted = true;
+  Audio_.win();
+}
+
+function drawBoard(t) {
+  bg(); bgRings(t, t * 16);
+  ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.8)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  centreText("LEADERBOARD", 54, 24, "#fff", 900);
+
+  /* TODAY / ALL-TIME — the client asked for both, so show both */
+  const tabs = [["TODAY", "day"], ["ALL TIME", "all"]];
+  tabs.forEach(([label, key], i) => {
+    const w = 120, x = VW / 2 - w - 6 + i * (w + 12), y = 78;
+    const on = Game.boardScope === key;
+    ctx.save();
+    ctx.fillStyle = on ? C.blue : "rgba(255,255,255,0.07)";
+    roundRect(x, y, w, 30, 15); ctx.fill();
+    ctx.strokeStyle = on ? C.bright : "rgba(255,255,255,0.2)"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = on ? "#fff" : "rgba(255,255,255,0.6)";
+    ctx.font = "800 12px system-ui,sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(label, x + w / 2, y + 20);
+    ctx.restore();
+    if (Input.tapped && Input.tapPos &&
+        Input.tapPos.x > x && Input.tapPos.x < x + w && Input.tapPos.y > y && Input.tapPos.y < y + 30) {
+      Game.boardScope = key; Input.tapped = false;
+    }
+  });
+
+  const rows = LB.board(Game.boardScope);
+  const myIdx = rows.findIndex(r => r.me && r.score === Game.score);
+  const top = rows.slice(0, 8);
+  const rowH = 30, x0 = VW / 2 - 210, y0 = 128;
+
+  if (!top.length) {
+    ctx.save(); ctx.globalAlpha = 0.5;
+    centreText("no scores yet — be the first", y0 + 40, 13, "#fff", 600);
+    ctx.restore();
+  }
+  top.forEach((r, i) => {
+    const y = y0 + i * rowH;
+    const mine = myIdx === i;
+    ctx.save();
+    if (mine) { ctx.fillStyle = "rgba(127,212,255,0.16)"; roundRect(x0 - 8, y - 3, 436, rowH - 4, 8); ctx.fill(); }
+    ctx.font = "800 14px system-ui,sans-serif"; ctx.textAlign = "left";
+    ctx.fillStyle = i < 3 ? C.bright : "rgba(255,255,255,0.5)";
+    ctx.fillText(String(i + 1).padStart(2, "0"), x0, y + 16);
+    ctx.fillStyle = "#fff"; ctx.fillText(r.tag, x0 + 46, y + 16);
+    ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.font = "600 11px system-ui,sans-serif";
+    ctx.fillText("×" + (r.bestChain || 1), x0 + 118, y + 16);
+    ctx.textAlign = "right";
+    ctx.font = "800 15px system-ui,sans-serif"; ctx.fillStyle = mine ? C.bright : "#fff";
+    ctx.fillText(String(r.score), x0 + 420, y + 16);
+    ctx.restore();
+  });
+
+  /* your standing, even when you are nowhere near the top */
+  if (myIdx >= 8) {
+    const y = y0 + 8 * rowH + 6;
+    ctx.save();
+    ctx.fillStyle = "rgba(127,212,255,0.16)"; roundRect(x0 - 8, y - 3, 436, rowH - 4, 8); ctx.fill();
+    ctx.font = "800 14px system-ui,sans-serif"; ctx.textAlign = "left";
+    ctx.fillStyle = C.bright; ctx.fillText(String(myIdx + 1), x0, y + 16);
+    ctx.fillStyle = "#fff"; ctx.fillText(Game.tag, x0 + 46, y + 16);
+    ctx.textAlign = "right"; ctx.fillStyle = C.bright;
+    ctx.fillText(String(Game.score), x0 + 420, y + 16);
+    ctx.restore();
+  }
+  if (myIdx >= 0) {
+    ctx.save(); ctx.globalAlpha = 0.7;
+    centreText(`you placed ${myIdx + 1} of ${rows.length}`, VH - 96, 12, "#bcd6ff", 600);
+    ctx.restore();
+  }
+
+  /* the collective number — one small action, multiplied by everyone */
+  ctx.save(); ctx.globalAlpha = 0.55;
+  centreText(LB.ripples().toLocaleString() + " ripples started at Gamescom", VH - 74, 12, C.bright, 700);
+  ctx.restore();
+
+  const back = bigButton("BACK", VH - 38, 170, 38, false);
+  if (tappedIn(back) || Input.keys.Escape) { Input.tapped = false; Game.setState("title"); }
+}
+
 function drawWorld(t) {
   const L = Game.level;
   bg();
@@ -2048,6 +2447,8 @@ function frame(now) {
     case "title":   drawTitle(Game.t, raw); break;
     case "info":    drawInfo(Game.t); break;
     case "select":  drawSelect(Game.t); break;
+    case "runend":  drawRunEnd(Game.t); break;
+    case "board":   drawBoard(Game.t); break;
 
     case "play":
       drawWorld(Game.t); drawHUD();
@@ -2129,12 +2530,17 @@ function frame(now) {
   }
 
   Input.tapped = false; Input.tapPos = null;
+  if (Game.state !== "runend") Input.typed.length = 0;
+  Input.confirm = false;
   requestAnimationFrame(frame);
 }
 
+lbSeed();
 resize();
 Game.titleBall.y = VH * 0.5;
-if (WARP_STAGE >= 1 && WARP_STAGE <= LEVELS.length) Game.start(WARP_STAGE - 1);
+if (QS.get("run")) Game.startRun();                       // #run=1 jumps straight into a daily run
+else if (QS.get("board")) { Game.boardScope = "day"; Game.setState("board"); }
+else if (WARP_STAGE >= 1 && WARP_STAGE <= LEVELS.length) Game.start(WARP_STAGE - 1);
 requestAnimationFrame(frame);
 
 })();
