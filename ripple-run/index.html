@@ -322,7 +322,10 @@ const LEVELS = [
     { x:3160, y:355, type:"step" },
     { x:3255, y:330, type:"step" },
     { x:3350, y:330, type:"step" },
-    { x:3445, y:355, type:"step" }
+    { x:3445, y:355, type:"step" },
+    /* deck has to reach the far shore, not stop a third of the way across */
+    { x:3540, y:375, type:"step" },
+    { x:3635, y:392, type:"step" }
   ],
   pulses: [
     { x:300, up:60 }, { x:360, up:60 },
@@ -380,10 +383,17 @@ const LEVELS = [
     { x:1640, y:250, type:"step" },
     { x:1735, y:265, type:"step" },
     { x:1830, y:295, type:"calm" },
+    /* the long descent to the far shore of gap 2 */
+    { x:1925, y:320, type:"step" },
+    { x:2020, y:345, type:"step" },
+    { x:2115, y:365, type:"step" },
     { x:2440, y:355, type:"step" },
     { x:2535, y:325, type:"step" },
     { x:2630, y:315, type:"step" },
     { x:2725, y:340, type:"step" },
+    /* low first step — the old lead stone sat 181px above the shore,
+       higher than the ball can jump, so the bridge was unboardable */
+    { x:3230, y:390, type:"step" },
     { x:3320, y:305, type:"step" },
     { x:3415, y:275, type:"step" },
     { x:3510, y:265, type:"step" },
@@ -556,6 +566,8 @@ function circleCircle(bx, by, br, cx, cy, cr) {
    ============================================================ */
 const NODE_LIFE  = 7.0;   // seconds a woken ring stays solid
 const NODE_R     = 26;
+const LINK_MAX   = 150;   // two woken rings this close span a bridge deck
+const DECK_H     = 9;     // half-thickness of that deck
 const RIPPLE_CD  = 0.62;  // seconds between player ripples
 const RIPPLE_MAX = 250;   // reach of a player-fired ripple
 const CHAIN_MAX  = 260;   // reach of a ripple emitted by a woken ring
@@ -603,6 +615,14 @@ const Game = {
       goal: { x: L.goal.x, y: gy(L.goal.x) ?? 400, ph: 0 },
       stall: null, stallGate: L.stallGate || null, stallCleared: !L.stall
     };
+    /* precompute which rings are close enough to span a deck between them —
+       a link only carries you while BOTH its ends are awake */
+    lvl.links = [];
+    for (let i = 0; i < lvl.nodes.length; i++)
+      for (let j = i + 1; j < lvl.nodes.length; j++)
+        if (Math.hypot(lvl.nodes[i].x - lvl.nodes[j].x, lvl.nodes[i].y - lvl.nodes[j].y) <= LINK_MAX)
+          lvl.links.push({ a: i, b: j });
+
     if (L.stall) {
       lvl.stall = {
         x: L.stall.x, y: (gy(L.stall.x) ?? 400) - 54, w: 96, h: 96,
@@ -807,6 +827,15 @@ function updatePlay(dt) {
       for (const o of L.obstacles)
         if (!o.calm && !o.gone && Math.hypot(o.x - n.x, o.y - n.y) < 150) calmObstacle(o, 1);
     }
+  }
+
+  /* the deck between two awake rings is solid too — treat it as a capsule,
+     so ring + deck + ring reads as one continuous surface underfoot */
+  for (const k of L.links) {
+    const A = L.nodes[k.a], B = L.nodes[k.b];
+    if (!A.on || !B.on) continue;
+    const hit = circleSegment(b.x, b.y, b.r + DECK_H, A.x, A.y, B.x, B.y);
+    if (hit) resolve(b, hit);
   }
 
   if (b.grounded && !wasGrounded) {
@@ -1069,6 +1098,50 @@ function drawRipples(L) {
     ctx.globalAlpha *= 0.4;
     ctx.strokeStyle = C.white; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r * 0.82, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* the bridge deck spanning two awake rings — it snaps in as they wake
+   and thins out as they fade, so the path visibly expires under you */
+function drawBridges(L) {
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const k of L.links) {
+    const A = L.nodes[k.a], B = L.nodes[k.b];
+    if (!A.on || !B.on) continue;
+
+    const fade = clamp(Math.min(A.life, B.life) / 1.6, 0, 1);
+    const snap = 1 - Math.max(A.pop, B.pop) * 0.55;      // slams into place on wake
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const len = Math.hypot(dx, dy) || 1;
+    let px = -dy / len, py = dx / len;
+    if (py > 0) { px = -px; py = -py; }                  // perpendicular, pointing up
+
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = C.blue;
+    ctx.lineWidth = DECK_H * 2 * snap;
+    ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+
+    /* plank rungs, so it reads as a built thing rather than a painted line */
+    ctx.strokeStyle = "rgba(0,0,0,0.22)";
+    ctx.lineWidth = 2;
+    for (let t = 0.18; t < 0.9; t += 0.22) {
+      const cx = A.x + dx * t, cy = A.y + dy * t;
+      ctx.beginPath();
+      ctx.moveTo(cx - px * DECK_H * snap, cy - py * DECK_H * snap);
+      ctx.lineTo(cx + px * DECK_H * snap, cy + py * DECK_H * snap);
+      ctx.stroke();
+    }
+
+    /* bright top edge — same language as the terrain, so it reads as ground */
+    const off = DECK_H * snap;
+    ctx.strokeStyle = Math.min(A.life, B.life) < 2 ? C.warn : C.bright;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(A.x + px * off, A.y + py * off);
+    ctx.lineTo(B.x + px * off, B.y + py * off);
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -1731,6 +1804,7 @@ function drawWorld(t) {
   drawTerrain(L);
   for (const s of L.spikes) drawSpikes(s);
   for (const p of L.pulses) drawPulse(p);
+  drawBridges(L);
   for (const n of L.nodes) drawNode(n);
   drawGoal(L.goal, t, L.stallCleared);
   for (const o of L.obstacles) drawObstacle(o, t);
