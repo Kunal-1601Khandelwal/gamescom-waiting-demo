@@ -1,0 +1,1791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#00103f">
+<title>RIPPLE — a small action, a wider response</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#00103f;
+    -webkit-tap-highlight-color:transparent;touch-action:none;overscroll-behavior:none}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:pointer}
+  #rotate{position:fixed;inset:0;display:none;place-items:center;background:#00103f;
+    color:#bcd6ff;font:600 16px/1.6 system-ui,sans-serif;text-align:center;padding:32px;z-index:10}
+  @media (max-aspect-ratio:1/1){ #rotate{display:grid} canvas{opacity:.12} }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="rotate"><div><div style="font-size:44px;margin-bottom:12px">⟳</div>Rotate your device<br><span style="opacity:.6;font-weight:400">RIPPLE plays in landscape</span></div></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ============================================================
+   RIPPLE — Gamescom activation prototype
+
+   THE MECHANIC
+   You move a ball, but the ball alone cannot finish a stage.
+   Firing a RIPPLE sends out an expanding brand circle. Where it
+   passes, dormant rings wake into solid stepping stones and
+   inert obstacles are calmed. Every woken ring emits its OWN
+   ripple, so a single tap can cascade across the screen —
+   one small action, a much wider response.
+
+   Woken rings fade back to dormant after a few seconds.
+   Waiting is the only thing that undoes your progress.
+
+   BRAND NOTE — READ BEFORE SHOWING A CLIENT
+   The concentric ring used throughout is a STAND-IN for the
+   circular device in the Novo Nordisk logo. The real logo
+   lockup, the official brand blue values and the brand
+   typeface must be dropped in from the brand guidelines.
+   Nothing in this file is an official brand asset.
+   ============================================================ */
+
+const cv = document.getElementById("game");
+const ctx = cv.getContext("2d", { alpha: false });
+
+/* ---------- palette (PLACEHOLDER — swap from guidelines) ---- */
+const C = {
+  deep:   "#00103f",
+  navy:   "#012a70",
+  blue:   "#0a4ea8",
+  mid:    "#0d63cf",
+  bright: "#7fd4ff",
+  white:  "#f4f9ff",
+  inert:  "#46536b",
+  inert2: "#5d6b85",
+  dark:   "#2b3546",
+  warn:   "#ff8a6b"
+};
+
+/* ---------- maths ------------------------------------------ */
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TAU = Math.PI * 2;
+const approach = (v, t, r) => v < t ? Math.min(v + r, t) : Math.max(v - r, t);
+
+/* ---------- viewport --------------------------------------- */
+let VW = 960, VH = 540, scale = 1, dpr = 1, ox = 0, oy = 0;
+
+function resize() {
+  const r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  VH = 540;
+  VW = Math.round(clamp(VH * (w / h), 760, 1500));
+  scale = Math.min(w / VW, h / VH);
+  ox = (w - VW * scale) / 2;
+  oy = (h - VH * scale) / 2;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  applyTransform();
+  ctx.imageSmoothingEnabled = true;
+}
+function applyTransform() { ctx.setTransform(scale * dpr, 0, 0, scale * dpr, ox * dpr, oy * dpr); }
+function clearFrame() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C.deep;
+  ctx.fillRect(0, 0, cv.width / dpr, cv.height / dpr);
+  applyTransform();
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 120));
+if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(cv);
+
+/* ---------- audio ------------------------------------------ */
+const Audio_ = {
+  ctx: null, on: true,
+  init() { if (this.ctx) return; try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} },
+  resume() { if (this.ctx && this.ctx.state === "suspended") this.ctx.resume(); },
+  blip(freq, dur, type = "sine", vol = 0.05, slide = 0) {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  },
+  jump()   { this.blip(360, 0.11, "sine", 0.04, 220); },
+  ripple() { this.blip(300, 0.34, "sine", 0.05, 420); },
+  /* each link in a chain rings a step higher — the cascade is audible */
+  chain(d) { this.blip(420 * Math.pow(1.16, Math.min(d, 10)), 0.18, "triangle", 0.045); },
+  pulse()  { this.blip(940, 0.07, "triangle", 0.04); },
+  calm()   { this.blip(520, 0.26, "sine", 0.05, 180); },
+  hurt()   { this.blip(190, 0.3, "sawtooth", 0.055, -120); },
+  land()   { this.blip(120, 0.05, "sine", 0.028); },
+  win()    { [523, 659, 784, 1046, 1319].forEach((f, i) => setTimeout(() => this.blip(f, 0.2, "sine", 0.05), i * 105)); }
+};
+
+/* ---------- input ------------------------------------------ */
+const Input = {
+  left: false, right: false, jump: false, jumpPressed: false, ripplePressed: false,
+  keys: {}, pointers: new Map(), tapped: false, tapPos: null, _jPrev: false, _rPrev: false
+};
+
+addEventListener("keydown", e => {
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Space","KeyA","KeyD","KeyW","KeyS","KeyE"].includes(e.code)) e.preventDefault();
+  if (!Input.keys[e.code]) {
+    if (e.code === "ArrowUp" || e.code === "Space" || e.code === "KeyW") Input.jumpPressed = true;
+    if (e.code === "KeyE" || e.code === "ShiftLeft" || e.code === "ArrowDown" || e.code === "KeyS") Input.ripplePressed = true;
+    if (e.code === "Escape" || e.code === "KeyP") Game.togglePause();
+    if (e.code === "KeyM") Audio_.on = !Audio_.on;
+    Input.tapped = true;
+  }
+  Input.keys[e.code] = true;
+  Audio_.init(); Audio_.resume();
+});
+addEventListener("keyup", e => { Input.keys[e.code] = false; });
+
+function readKeys() {
+  const k = Input.keys;
+  Input.left  = !!(k.ArrowLeft || k.KeyA);
+  Input.right = !!(k.ArrowRight || k.KeyD);
+  Input.jump  = !!(k.ArrowUp || k.Space || k.KeyW);
+}
+
+function ptPos(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left - ox) / scale, y: (e.clientY - r.top - oy) / scale };
+}
+cv.addEventListener("pointerdown", e => {
+  const p = ptPos(e);
+  Input.pointers.set(e.pointerId, p);
+  Input.tapped = true; Input.tapPos = p;
+  Audio_.init(); Audio_.resume();
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+});
+cv.addEventListener("pointermove", e => { if (Input.pointers.has(e.pointerId)) Input.pointers.set(e.pointerId, ptPos(e)); });
+const endPtr = e => Input.pointers.delete(e.pointerId);
+cv.addEventListener("pointerup", endPtr);
+cv.addEventListener("pointercancel", endPtr);
+cv.addEventListener("contextmenu", e => e.preventDefault());
+
+/* ---------- level-testing warp ------------------------------
+   ?stage=1..4 jumps straight into a stage, ?x=1200 drops the
+   ball at that world x. Used for tuning node spacing without
+   replaying the run-up each time.                              */
+const QS = new URLSearchParams(location.search || location.hash.replace(/^#/, ""));
+const WARP_STAGE = parseInt(QS.get("stage"), 10);
+const WARP_X = parseFloat(QS.get("x"));
+
+/* ---------- save -------------------------------------------- */
+const SAVE_KEY = "ripple.save.v1";
+let Save = { unlocked: 1, best: {}, totalRipples: 0 };
+try { Object.assign(Save, JSON.parse(localStorage.getItem(SAVE_KEY) || "{}")); } catch (e) {}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(Save)); } catch (e) {} }
+
+/* ============================================================
+   TERRAIN
+   ============================================================ */
+function buildTerrain(spans, startX = 0, startY = 420) {
+  const chunks = [];
+  let cur = [{ x: startX, y: startY }];
+  let x = startX, y = startY;
+  for (const s of spans) {
+    if (s.t === "gap") {
+      if (cur.length > 1) chunks.push(cur);
+      x += s.w; cur = [];
+    } else if (s.t === "flat") {
+      if (!cur.length) { y = s.y; cur.push({ x, y }); }
+      y = s.y !== undefined ? s.y : y;
+      if (cur.length && cur[cur.length - 1].y !== y) cur.push({ x, y });
+      x += s.w; cur.push({ x, y });
+    } else if (s.t === "hill") {
+      const steps = Math.max(6, Math.round(s.w / 26));
+      const y0 = y, y1 = s.y;
+      for (let i = 1; i <= steps; i++) {
+        const tt = smooth(i / steps);
+        cur.push({ x: x + (s.w * i) / steps, y: lerp(y0, y1, tt) });
+      }
+      x += s.w; y = y1;
+    }
+  }
+  if (cur.length > 1) chunks.push(cur);
+  return {
+    chunks, width: x,
+    at(px) {
+      for (const c of chunks) {
+        if (px < c[0].x || px > c[c.length - 1].x) continue;
+        for (let i = 0; i < c.length - 1; i++) {
+          const a = c[i], b = c[i + 1];
+          if (px >= a.x && px <= b.x) {
+            const tt = b.x === a.x ? 0 : (px - a.x) / (b.x - a.x);
+            return lerp(a.y, b.y, tt);
+          }
+        }
+      }
+      return null;
+    }
+  };
+}
+
+/* ============================================================
+   STAGES
+   `nodes` are the dormant brand circles. type:
+     "step" — wakes into a solid stepping stone
+     "calm" — also pacifies obstacles within its radius
+   Nodes spaced under ~140px cascade from a single tap, so the
+   gaps are crossed by ONE well-placed ripple, not four taps.
+   ============================================================ */
+const LEVELS = [
+{
+  name: "FIRST TAP", water: 620,
+  spans: [
+    { t:"flat", w:700, y:420 },
+    { t:"gap",  w:300 },
+    { t:"flat", w:520, y:420 },
+    { t:"hill", w:240, y:360 },
+    { t:"flat", w:380 },
+    { t:"gap",  w:330 },
+    { t:"flat", w:460, y:380 },
+    { t:"hill", w:240, y:440 },
+    { t:"flat", w:700 }
+  ],
+  nodes: [
+    { x:790,  y:365, type:"step" },
+    { x:880,  y:340, type:"step" },
+    { x:970,  y:365, type:"step" },
+    { x:1500, y:285, type:"step" },
+    { x:1610, y:260, type:"step" },
+    { x:2020, y:325, type:"step" },
+    { x:2115, y:300, type:"step" },
+    { x:2210, y:300, type:"step" },
+    { x:2305, y:325, type:"step" },
+    { x:2700, y:305, type:"calm" }
+  ],
+  pulses: [
+    { x:400, up:60 }, { x:460, up:60 },
+    { x:880, y:270 },
+    { x:1300, up:70 }, { x:1360, up:70 },
+    { x:1610, y:195 },
+    { x:2160, y:235 },
+    { x:2600, up:70 }, { x:2660, up:70 },
+    { x:3000, up:80 }, { x:3060, up:80 }
+  ],
+  obstacles: [ { x:2790, a:2660, b:2960 } ],
+  spikes: [ { x:1420, n:3 } ],
+  checkpoints: [ { x:1250, up:0 }, { x:2560, up:0 } ],
+  goal: { x:3350, up:0 }
+},
+{
+  name: "CHAIN REACTION", water: 640,
+  spans: [
+    { t:"flat", w:520, y:430 },
+    { t:"gap",  w:360 },
+    { t:"flat", w:420, y:400 },
+    { t:"hill", w:240, y:330 },
+    { t:"flat", w:300 },
+    { t:"gap",  w:380 },
+    { t:"flat", w:480, y:400 },
+    { t:"hill", w:240, y:460 },
+    { t:"flat", w:420 },
+    { t:"gap",  w:340 },
+    { t:"flat", w:520, y:400 },
+    { t:"hill", w:260, y:340 },
+    { t:"flat", w:640 }
+  ],
+  nodes: [
+    { x:610,  y:375, type:"step" },
+    { x:700,  y:350, type:"step" },
+    { x:790,  y:350, type:"step" },
+    { x:880,  y:375, type:"step" },
+    /* a high garland — one tap from below lights the whole arc */
+    { x:1300, y:255, type:"step" },
+    { x:1400, y:220, type:"step" },
+    { x:1500, y:205, type:"step" },
+    { x:1600, y:220, type:"step" },
+    { x:1700, y:255, type:"step" },
+    { x:1980, y:355, type:"step" },
+    { x:2075, y:325, type:"step" },
+    { x:2170, y:315, type:"step" },
+    { x:2265, y:335, type:"step" },
+    { x:2360, y:365, type:"calm" },
+    { x:2900, y:335, type:"calm" },
+    { x:3160, y:355, type:"step" },
+    { x:3255, y:330, type:"step" },
+    { x:3350, y:330, type:"step" },
+    { x:3445, y:355, type:"step" }
+  ],
+  pulses: [
+    { x:300, up:60 }, { x:360, up:60 },
+    { x:740, y:285 },
+    { x:1400, y:155 }, { x:1500, y:135 }, { x:1600, y:155 },
+    { x:2170, y:245 },
+    { x:2700, up:70 }, { x:2760, up:70 },
+    { x:3300, y:260 },
+    { x:3900, up:80 }, { x:3960, up:80 }
+  ],
+  obstacles: [ { x:2450, a:2340, b:2660 }, { x:2980, a:2880, b:3080 }, { x:3900, a:3800, b:4060 } ],
+  spikes: [ { x:1150, n:4 }, { x:2620, n:4 } ],
+  checkpoints: [ { x:1050, up:0 }, { x:2500, up:0 } ],
+  goal: { x:4180, up:0 }
+},
+{
+  name: "MOMENTUM", water: 650,
+  spans: [
+    { t:"flat", w:460, y:440 },
+    { t:"gap",  w:400 },
+    { t:"flat", w:360, y:400 },
+    { t:"hill", w:240, y:320 },
+    { t:"flat", w:280 },
+    { t:"gap",  w:420 },
+    { t:"flat", w:400, y:380 },
+    { t:"hill", w:240, y:460 },
+    { t:"flat", w:360 },
+    { t:"gap",  w:400 },
+    { t:"flat", w:440, y:420 },
+    { t:"hill", w:260, y:330 },
+    { t:"flat", w:340 },
+    { t:"gap",  w:360 },
+    { t:"flat", w:700, y:390 }
+  ],
+  nodes: [
+    { x:540,  y:385, type:"step" },
+    { x:630,  y:355, type:"step" },
+    { x:720,  y:345, type:"step" },
+    { x:810,  y:370, type:"step" },
+    { x:1450, y:295, type:"step" },
+    { x:1545, y:265, type:"step" },
+    { x:1640, y:250, type:"step" },
+    { x:1735, y:265, type:"step" },
+    { x:1830, y:295, type:"calm" },
+    { x:2440, y:355, type:"step" },
+    { x:2535, y:325, type:"step" },
+    { x:2630, y:315, type:"step" },
+    { x:2725, y:340, type:"step" },
+    { x:3320, y:305, type:"step" },
+    { x:3415, y:275, type:"step" },
+    { x:3510, y:265, type:"step" },
+    { x:3605, y:290, type:"calm" },
+    { x:3700, y:325, type:"step" },
+    /* final crossing — the stage ends on a ripple, not on flat ground */
+    { x:4670, y:285, type:"step" },
+    { x:4765, y:260, type:"step" },
+    { x:4860, y:285, type:"step" }
+  ],
+  pulses: [
+    { x:250, up:60 }, { x:310, up:60 },
+    { x:720, y:275 },
+    { x:1640, y:180 },
+    { x:2630, y:245 },
+    { x:3510, y:195 },
+    { x:4100, up:70 }, { x:4160, up:70 }, { x:4220, up:70 },
+    { x:4765, y:190 },
+    { x:5060, up:70 }, { x:5120, up:70 }
+  ],
+  obstacles: [ { x:1300, a:1200, b:1420 }, { x:2300, a:2200, b:2400 },
+               { x:3080, a:3020, b:3140 }, { x:4150, a:4040, b:4300 } ],
+  spikes: [ { x:1180, n:4 }, { x:3040, n:5 } ],
+  checkpoints: [ { x:1150, up:0 }, { x:2300, up:0 }, { x:3150, up:0 }, { x:4400, up:0 } ],
+  goal: { x:5300, up:0 }
+},
+{
+  name: "THE WAIT", water: 650,
+  spans: [
+    { t:"flat", w:520, y:430 },
+    { t:"gap",  w:340 },
+    { t:"flat", w:420, y:400 },
+    { t:"hill", w:240, y:330 },
+    { t:"flat", w:320 },
+    { t:"gap",  w:360 },
+    { t:"flat", w:460, y:410 },
+    { t:"hill", w:240, y:450 },
+    { t:"flat", w:1250 }              /* the stall arena */
+  ],
+  nodes: [
+    { x:600,  y:375, type:"step" },
+    { x:690,  y:350, type:"step" },
+    { x:780,  y:350, type:"step" },
+    { x:870,  y:375, type:"step" },
+    { x:1450, y:260, type:"step" },
+    { x:1550, y:235, type:"step" },
+    { x:1650, y:250, type:"step" },
+    { x:2000, y:360, type:"step" },
+    { x:2095, y:330, type:"step" },
+    { x:2190, y:330, type:"step" },
+    { x:2285, y:360, type:"calm" },
+    /* arena: keep the player supplied with ripple targets */
+    { x:3100, y:335, type:"calm" },
+    { x:3400, y:305, type:"step" },
+    { x:3700, y:335, type:"calm" }
+  ],
+  pulses: [
+    { x:280, up:60 }, { x:340, up:60 },
+    { x:780, y:280 },
+    { x:1550, y:165 },
+    { x:2145, y:260 },
+    { x:2600, up:70 }, { x:2660, up:70 }
+  ],
+  obstacles: [ { x:1300, a:1200, b:1420 }, { x:2500, a:2400, b:2620 } ],
+  spikes: [ { x:1150, n:4 } ],
+  checkpoints: [ { x:1100, up:0 }, { x:2400, up:0 } ],
+  stall: { x:3450 },
+  stallGate: 2900,
+  goal: { x:3980, up:0 }
+}
+];
+
+/* ============================================================
+   PARTICLES
+   ============================================================ */
+const parts = [];
+function spawnParticle(x, y, vx, vy, life, r, col, grav = 900) {
+  parts.push({ x, y, vx, vy, life, max: life, r, col, grav });
+}
+function burst(x, y, n, col, speed = 220, r = 4, grav = 900) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, TAU), s = rnd(speed * 0.35, speed);
+    spawnParticle(x, y, Math.cos(a) * s, Math.sin(a) * s - 40, rnd(0.3, 0.7), rnd(r * 0.5, r), col, grav);
+  }
+}
+function updateParticles(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life -= dt;
+    if (p.life <= 0) { parts.splice(i, 1); continue; }
+    p.vy += p.grav * dt; p.vx *= 0.99;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+}
+
+const floaters = [];
+function floatText(x, y, txt, depth) { floaters.push({ x, y, txt, life: 0.9, max: 0.9, depth }); }
+function updateFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.life -= dt; f.y -= 34 * dt;
+    if (f.life <= 0) floaters.splice(i, 1);
+  }
+}
+
+/* ---------- collision -------------------------------------- */
+function circleSegment(bx, by, br, ax, ay, cx2, cy2) {
+  const abx = cx2 - ax, aby = cy2 - ay;
+  const apx = bx - ax, apy = by - ay;
+  const len2 = abx * abx + aby * aby;
+  let t = len2 ? (apx * abx + apy * aby) / len2 : 0;
+  t = clamp(t, 0, 1);
+  const px = ax + abx * t, py = ay + aby * t;
+  let dx = bx - px, dy = by - py;
+  let d = Math.hypot(dx, dy);
+  if (d >= br) return null;
+  if (d < 0.0001) { dx = 0; dy = -1; d = 1; }
+  return { nx: dx / d, ny: dy / d, depth: br - d };
+}
+function circleRect(bx, by, br, rx, ry, rw, rh) {
+  const hx = rw / 2, hy = rh / 2;
+  const cx = clamp(bx, rx - hx, rx + hx), cy = clamp(by, ry - hy, ry + hy);
+  let dx = bx - cx, dy = by - cy, d = Math.hypot(dx, dy);
+  if (d >= br) return null;
+  if (d < 0.0001) {
+    const l = bx - (rx - hx), r = (rx + hx) - bx, t = by - (ry - hy), b = (ry + hy) - by;
+    const m = Math.min(l, r, t, b);
+    if (m === t) return { nx: 0, ny: -1, depth: br + t };
+    if (m === b) return { nx: 0, ny: 1, depth: br + b };
+    if (m === l) return { nx: -1, ny: 0, depth: br + l };
+    return { nx: 1, ny: 0, depth: br + r };
+  }
+  return { nx: dx / d, ny: dy / d, depth: br - d };
+}
+function circleCircle(bx, by, br, cx, cy, cr) {
+  let dx = bx - cx, dy = by - cy, d = Math.hypot(dx, dy);
+  if (d >= br + cr) return null;
+  if (d < 0.0001) { dx = 0; dy = -1; d = 1; }
+  return { nx: dx / d, ny: dy / d, depth: br + cr - d };
+}
+
+/* ============================================================
+   GAME
+   ============================================================ */
+const NODE_LIFE  = 7.0;   // seconds a woken ring stays solid
+const NODE_R     = 26;
+const RIPPLE_CD  = 0.62;  // seconds between player ripples
+const RIPPLE_MAX = 250;   // reach of a player-fired ripple
+const CHAIN_MAX  = 260;   // reach of a ripple emitted by a woken ring
+const GRAV       = 2100;
+
+const Game = {
+  state: "preload",
+  levelIdx: 0, level: null,
+  t: 0, stateT: 0, camX: 0, camY: 0, shake: 0, transition: 0,
+  hearts: 3, score: 0, bestChain: 0, ripplesFired: 0, runTime: 0,
+  titleBall: { y: 0, vy: 0, rot: 0 }, titleRipples: [],
+
+  loadLevel(i) {
+    const L = LEVELS[i];
+    this.levelIdx = i;
+    this.score = 0; this.bestChain = 0; this.ripplesFired = 0; this.runTime = 0;
+    const terrain = buildTerrain(L.spans);
+    const gy = x => terrain.at(x);
+    const place = o => o.y !== undefined ? o.y : (gy(o.x) ?? 400) - (o.up ?? 60);
+
+    const lvl = {
+      def: L, terrain, water: L.water, width: terrain.width,
+      ripples: [],
+      nodes: (L.nodes || []).map(n => ({
+        x: n.x, y: n.y, type: n.type || "step", r: NODE_R,
+        on: false, life: 0, pop: 0, ph: Math.random() * TAU
+      })),
+      pulses: (L.pulses || []).map(p => ({ x: p.x, y: place(p), got: false, ph: Math.random() * TAU })),
+      spikes: (L.spikes || []).map(s => ({ x: s.x, n: s.n, y: gy(s.x) ?? 400 })),
+      obstacles: (L.obstacles || []).map(o => ({
+        x: o.x, y: (gy(o.x) ?? 400) - 26, a: o.a, b: o.b, dir: 1, w: 46, h: 46,
+        calm: false, gone: false, goneT: 0, sq: 0
+      })),
+      checkpoints: (L.checkpoints || []).map(c => ({ x: c.x, y: gy(c.x) ?? 400, on: false })),
+      goal: { x: L.goal.x, y: gy(L.goal.x) ?? 400, ph: 0 },
+      stall: null, stallGate: L.stallGate || null, stallCleared: !L.stall
+    };
+    if (L.stall) {
+      lvl.stall = {
+        x: L.stall.x, y: (gy(L.stall.x) ?? 400) - 54, w: 96, h: 96,
+        hp: 3, dir: -1, vy: 0, grounded: true, hitT: 0, active: false, jumpT: 1.5, sq: 0, roar: 0
+      };
+    }
+    this.level = lvl;
+    this.ball = {
+      x: 90, y: (gy(90) ?? 400) - 40, vx: 0, vy: 0, r: 19,
+      rot: 0, grounded: false, groundT: 0, jumpBuf: 0, face: 1,
+      sqx: 1, sqy: 1, invuln: 0, blinkT: rnd(1, 4), blink: 0, cd: 0,
+      spawnX: 90, spawnY: (gy(90) ?? 400) - 40
+    };
+    this.camX = 0;
+    if (isFinite(WARP_X)) {
+      const b = this.ball;
+      b.x = WARP_X;
+      b.y = (gy(WARP_X) ?? 300) - 40;
+      b.spawnX = b.x; b.spawnY = b.y;
+      this.camX = clamp(b.x - VW * 0.42, 0, Math.max(0, lvl.width - VW));
+    }
+    this.hearts = 3; this.camY = 0;
+    parts.length = 0; floaters.length = 0;
+  },
+
+  start(i) { this.loadLevel(i); this.setState("play"); this.transition = 1; },
+  setState(s) { this.state = s; this.stateT = 0; },
+  togglePause() {
+    if (this.state === "play") this.setState("pause");
+    else if (this.state === "pause") this.setState("play");
+  },
+  damage() {
+    const b = this.ball;
+    if (b.invuln > 0) return;
+    this.hearts--; this.shake = 14; Audio_.hurt();
+    burst(b.x, b.y, 16, C.warn, 300, 5);
+    if (this.hearts <= 0) { this.setState("gameover"); return; }
+    this.setState("dead");
+  },
+  respawn() {
+    const b = this.ball;
+    b.x = b.spawnX; b.y = b.spawnY; b.vx = 0; b.vy = 0; b.invuln = 1.6; b.rot = 0; b.cd = 0;
+    this.setState("play");
+  },
+  completeLevel() {
+    const key = String(this.levelIdx);
+    const prev = Save.best[key] || { score: 0, chain: 0 };
+    Save.best[key] = { score: Math.max(prev.score, this.score), chain: Math.max(prev.chain, this.bestChain) };
+    Save.unlocked = Math.max(Save.unlocked, Math.min(LEVELS.length, this.levelIdx + 2));
+    Save.totalRipples = (Save.totalRipples || 0) + this.ripplesFired;
+    persist(); Audio_.win();
+    this.setState("complete");
+  }
+};
+
+/* ============================================================
+   THE RIPPLE
+   ============================================================ */
+function emitRipple(x, y, chain) {
+  Game.level.ripples.push({
+    x, y,
+    r: chain === 0 ? 10 : 6,
+    max: chain === 0 ? RIPPLE_MAX : CHAIN_MAX,
+    speed: chain === 0 ? 620 : 560,
+    chain
+  });
+}
+
+function fireRipple() {
+  const b = Game.ball;
+  if (b.cd > 0) return;
+  b.cd = RIPPLE_CD;
+  Game.ripplesFired++;
+  emitRipple(b.x, b.y, 0);
+  Audio_.ripple();
+  b.sqx = 1.18; b.sqy = 0.84;
+  for (let i = 0; i < 10; i++) {
+    const a = rnd(0, TAU);
+    spawnParticle(b.x + Math.cos(a) * 20, b.y + Math.sin(a) * 20,
+      Math.cos(a) * 190, Math.sin(a) * 190, 0.4, rnd(2, 3.6), C.bright, 0);
+  }
+}
+
+function updateRipples(dt) {
+  const L = Game.level;
+  for (let i = L.ripples.length - 1; i >= 0; i--) {
+    const rp = L.ripples[i];
+    const prev = rp.r;
+    rp.r += rp.speed * dt;
+    if (rp.r > rp.max) { L.ripples.splice(i, 1); continue; }
+
+    /* wake every dormant ring the expanding edge sweeps past this step */
+    for (const n of L.nodes) {
+      if (n.on) continue;
+      const d = Math.hypot(n.x - rp.x, n.y - rp.y);
+      if (d >= prev - n.r && d <= rp.r + n.r) wakeNode(n, rp.chain + 1);
+    }
+    for (const o of L.obstacles) {
+      if (o.calm || o.gone) continue;
+      const d = Math.hypot(o.x - rp.x, o.y - rp.y);
+      if (d >= prev - 30 && d <= rp.r + 30) calmObstacle(o, rp.chain + 1);
+    }
+    const st = L.stall;
+    if (st && st.active && st.hp > 0 && st.hitT <= 0) {
+      const d = Math.hypot(st.x - rp.x, st.y - rp.y);
+      if (d >= prev - 52 && d <= rp.r + 52) hitStall(st, rp.chain + 1);
+    }
+  }
+}
+
+function wakeNode(n, depth) {
+  n.on = true; n.life = NODE_LIFE; n.pop = 1;
+  const gain = 10 * depth;                      // deeper in the chain = worth more
+  Game.score += gain;
+  Game.bestChain = Math.max(Game.bestChain, depth);
+  Audio_.chain(depth);
+  burst(n.x, n.y, 8, C.bright, 150, 3, 0);
+  floatText(n.x, n.y - 30, "+" + gain, depth);
+  if (depth < 12) emitRipple(n.x, n.y, depth);  // the cascade
+}
+
+function calmObstacle(o, depth) {
+  o.calm = true; o.sq = 1;
+  Game.score += 25;
+  Audio_.calm();
+  burst(o.x, o.y, 14, C.mid, 200, 4, 200);
+  floatText(o.x, o.y - 40, "+25", depth);
+}
+
+function hitStall(st, depth) {
+  st.hp--; st.hitT = 1.0; st.sq = 1;
+  Game.shake = 18; Game.score += 100;
+  Audio_.calm(); Audio_.chain(depth + 2);
+  burst(st.x, st.y, 24, C.bright, 320, 6, 200);
+  floatText(st.x, st.y - 70, "+100", depth);
+  if (st.hp <= 0) {
+    Game.level.stallCleared = true;
+    Game.shake = 26;
+    burst(st.x, st.y, 46, C.bright, 420, 8, 120);
+    burst(st.x, st.y, 30, C.white, 340, 6, 120);
+    Audio_.win();
+  }
+}
+
+/* ============================================================
+   UPDATE
+   ============================================================ */
+function updatePlay(dt) {
+  const L = Game.level, b = Game.ball;
+  Game.runTime += dt;
+
+  const dir = (Input.right ? 1 : 0) - (Input.left ? 1 : 0);
+  const MAXV = 340, ACC = b.grounded ? 2400 : 1500, FRIC = b.grounded ? 2000 : 260;
+  if (dir !== 0) { b.vx = approach(b.vx, MAXV * dir, ACC * dt); b.face = dir; }
+  else b.vx = approach(b.vx, 0, FRIC * dt);
+
+  if (Input.jumpPressed) { b.jumpBuf = 0.13; Input.jumpPressed = false; }
+  b.jumpBuf -= dt; b.groundT -= dt; b.cd -= dt;
+  if (b.jumpBuf > 0 && b.groundT > 0) {
+    b.vy = -760; b.jumpBuf = 0; b.groundT = 0; b.grounded = false;
+    b.sqx = 0.78; b.sqy = 1.26; Audio_.jump();
+    for (let i = 0; i < 6; i++)
+      spawnParticle(b.x + rnd(-10, 10), b.y + b.r, rnd(-90, 90), rnd(-20, 60), 0.35, rnd(2, 4), "#ffffff55");
+  }
+  if (!Input.jump && b.vy < -220) b.vy += 2200 * dt;
+
+  if (Input.ripplePressed) { fireRipple(); Input.ripplePressed = false; }
+
+  b.vy += GRAV * dt;
+  b.vy = clamp(b.vy, -900, 1250);
+  b.x += b.vx * dt; b.y += b.vy * dt;
+
+  const wasGrounded = b.grounded;
+  b.grounded = false;
+
+  for (const c of L.terrain.chunks) {
+    if (b.x + b.r < c[0].x || b.x - b.r > c[c.length - 1].x) continue;
+    for (let i = 0; i < c.length - 1; i++) {
+      const a = c[i], d = c[i + 1];
+      if (b.x + b.r < Math.min(a.x, d.x) || b.x - b.r > Math.max(a.x, d.x)) continue;
+      const hit = circleSegment(b.x, b.y, b.r, a.x, a.y, d.x, d.y);
+      if (hit) resolve(b, hit);
+    }
+  }
+
+  updateRipples(dt);
+
+  /* woken rings are SOLID — this is what makes the ripple load-bearing */
+  for (const n of L.nodes) {
+    n.ph += dt * 2;
+    n.pop = approach(n.pop, 0, dt * 3.2);
+    if (!n.on) continue;
+    n.life -= dt;
+    if (n.life <= 0) {
+      n.on = false;
+      burst(n.x, n.y, 6, "#ffffff44", 90, 2.5, 0);
+      continue;
+    }
+    const hit = circleCircle(b.x, b.y, b.r, n.x, n.y, n.r);
+    if (hit) resolve(b, hit);
+    if (n.type === "calm") {
+      for (const o of L.obstacles)
+        if (!o.calm && !o.gone && Math.hypot(o.x - n.x, o.y - n.y) < 150) calmObstacle(o, 1);
+    }
+  }
+
+  if (b.grounded && !wasGrounded) {
+    const impact = Math.min(1, Math.abs(b.vy) / 700);
+    b.sqx = 1 + 0.34 * impact; b.sqy = 1 - 0.3 * impact;
+    if (impact > 0.35) {
+      Audio_.land();
+      for (let i = 0; i < 5 + impact * 8; i++)
+        spawnParticle(b.x + rnd(-12, 12), b.y + b.r, rnd(-140, 140), rnd(-90, -10), 0.34, rnd(2, 4), "#ffffff44");
+    }
+  }
+  b.sqx = approach(b.sqx, 1, dt * 5); b.sqy = approach(b.sqy, 1, dt * 5);
+  if (b.grounded) b.groundT = 0.11;
+  b.rot += (b.vx / b.r) * dt;
+  b.invuln -= dt;
+  b.blinkT -= dt;
+  if (b.blinkT <= 0) { b.blink = 0.12; b.blinkT = rnd(2.2, 5.5); }
+  b.blink -= dt;
+  if (b.grounded && Math.abs(b.vx) > 190 && Math.random() < 0.3)
+    spawnParticle(b.x - b.face * 8, b.y + b.r - 3, -b.vx * 0.12, rnd(-40, 0), 0.3, rnd(1.5, 3), "#ffffff33");
+
+  for (const p of L.pulses) {
+    if (p.got) continue;
+    p.ph += dt * 3;
+    if (Math.hypot(p.x - b.x, p.y - b.y) < b.r + 18) {
+      p.got = true; Game.score += 5; Audio_.pulse();
+      burst(p.x, p.y, 8, C.bright, 170, 3, 0);
+    }
+  }
+
+  for (const s of L.spikes) {
+    const w = s.n * 26;
+    if (b.x > s.x - w / 2 - b.r && b.x < s.x + w / 2 + b.r &&
+        b.y + b.r > s.y - 26 && b.y < s.y + 6) { Game.damage(); return; }
+  }
+
+  for (const o of L.obstacles) {
+    if (o.gone) { o.goneT += dt; continue; }
+    o.sq = approach(o.sq, 0, dt * 4);
+    if (!o.calm) {
+      o.x += o.dir * 78 * dt;
+      if (o.x < o.a) { o.x = o.a; o.dir = 1; }
+      if (o.x > o.b) { o.x = o.b; o.dir = -1; }
+      const g = L.terrain.at(o.x);
+      if (g === null) { o.dir *= -1; o.x += o.dir * 4; }
+      else o.y = lerp(o.y, g - o.h / 2, Math.min(1, dt * 14));
+    } else {
+      const g = L.terrain.at(o.x);
+      if (g !== null) o.y = lerp(o.y, g - o.h / 2, Math.min(1, dt * 10));
+    }
+    const hit = circleRect(b.x, b.y, b.r, o.x, o.y, o.w, o.h);
+    if (hit) {
+      if (o.calm) resolve(b, hit);                        // calmed: just a block
+      else if (hit.ny < -0.55 && b.vy > 40) {             // bounced off the top
+        o.gone = true; b.vy = -560; b.sqx = 0.8; b.sqy = 1.24;
+        Game.shake = 8; Game.score += 10; Audio_.land();
+        burst(o.x, o.y, 12, C.inert2, 240, 5);
+      } else { Game.damage(); return; }
+    }
+  }
+
+  if (L.stall) updateStall(L.stall, dt);
+
+  for (const c of L.checkpoints) {
+    if (!c.on && Math.abs(b.x - c.x) < 34 && Math.abs(b.y - c.y) < 90) {
+      c.on = true; b.spawnX = c.x; b.spawnY = c.y - 46;
+      Audio_.blip(660, 0.1, "sine", 0.045);
+      burst(c.x, c.y - 50, 12, C.bright, 200, 4, 200);
+    }
+  }
+
+  L.goal.ph += dt * 2.4;
+  if (L.stallCleared && Math.hypot(b.x - L.goal.x, b.y - (L.goal.y - 46)) < 46) { Game.completeLevel(); return; }
+
+  if (b.y - b.r > L.water) { Game.damage(); return; }
+  b.x = clamp(b.x, b.r, L.width - b.r);
+
+  const targetX = clamp(b.x + b.face * 70 - VW * 0.42, 0, Math.max(0, L.width - VW));
+  const targetY = clamp(b.y - VH * 0.58, -160, Math.max(0, L.water + 40 - VH));
+  Game.camX = lerp(Game.camX, targetX, Math.min(1, dt * 6.5));
+  Game.camY = lerp(Game.camY, targetY, Math.min(1, dt * 4.5));
+}
+
+function resolve(b, hit) {
+  b.x += hit.nx * hit.depth; b.y += hit.ny * hit.depth;
+  const vn = b.vx * hit.nx + b.vy * hit.ny;
+  if (vn < 0) {
+    const rest = hit.ny < -0.5 ? 0.06 : 0.28;
+    b.vx -= hit.nx * vn * (1 + rest);
+    b.vy -= hit.ny * vn * (1 + rest);
+  }
+  if (hit.ny < -0.5) { b.grounded = true; b.groundT = 0.11; }
+}
+
+function updateStall(st, dt) {
+  const L = Game.level, b = Game.ball;
+  if (!st.active) {
+    if (b.x > L.stallGate) {
+      st.active = true; st.roar = 1.6; Game.shake = 16;
+      Audio_.blip(80, 0.6, "sawtooth", 0.06, -30);
+    }
+    return;
+  }
+  if (st.hp <= 0) { st.sq = approach(st.sq, 0, dt * 2); return; }
+  st.roar = Math.max(0, st.roar - dt);
+  st.hitT = Math.max(0, st.hitT - dt);
+  st.sq = approach(st.sq, 0, dt * 4);
+
+  const speed = 58 + (3 - st.hp) * 32;
+  if (st.hitT <= 0) { st.dir = Math.sign(b.x - st.x) || st.dir; st.x += st.dir * speed * dt; }
+  st.jumpT -= dt;
+  if (st.jumpT <= 0 && st.grounded && st.hitT <= 0) {
+    st.vy = -620; st.grounded = false; st.jumpT = 2.0 - (3 - st.hp) * 0.35;
+  }
+  st.vy += GRAV * dt; st.y += st.vy * dt;
+  const g = L.terrain.at(st.x);
+  if (g !== null && st.y + st.h / 2 > g) {
+    if (!st.grounded && st.vy > 200) {
+      Game.shake = 12; st.sq = 1;
+      for (let i = 0; i < 16; i++)
+        spawnParticle(st.x + rnd(-48, 48), g, rnd(-200, 200), rnd(-260, -60), 0.5, rnd(2, 5), "#ffffff55");
+    }
+    st.y = g - st.h / 2; st.vy = 0; st.grounded = true;
+  }
+  /* contact always hurts — the stall can ONLY be shifted by a ripple */
+  if (st.hitT <= 0 && circleRect(b.x, b.y, b.r, st.x, st.y, st.w, st.h)) Game.damage();
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function bg() {
+  const g = ctx.createLinearGradient(0, 0, 0, VH);
+  g.addColorStop(0, C.deep);
+  g.addColorStop(0.55, C.navy);
+  g.addColorStop(1, C.blue);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+
+/* soft concentric rings drifting behind everything — the brand
+   device used as ambient texture rather than as a logo */
+function bgRings(t, camX) {
+  ctx.save();
+  for (let i = 0; i < 9; i++) {
+    const sp = 0.04 + i * 0.02;
+    const bx = ((i * 340 + 120) - camX * sp) % (VW + 900) - 300;
+    const by = 70 + (i % 4) * 96 + Math.sin(t * 0.32 + i) * 16;
+    const base = 40 + (i % 3) * 34;
+    for (let k = 0; k < 3; k++) {
+      const r = base + k * 26 + Math.sin(t * 0.7 + i + k) * 5;
+      ctx.strokeStyle = "rgba(127,212,255," + (0.10 - k * 0.026).toFixed(3) + ")";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, TAU); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function hash(n) { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); }
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* abstract soft horizon — environment without the factory theme */
+function horizon(camX, depth, colour, baseY, hMin, hMax, step) {
+  const par = camX * depth;
+  const start = Math.floor(par / step) - 1;
+  const count = Math.ceil(VW / step) + 3;
+  ctx.fillStyle = colour;
+  for (let i = 0; i < count; i++) {
+    const idx = start + i;
+    const x = idx * step - par;
+    const h = hMin + hash(idx * 1.7 + depth * 91) * (hMax - hMin);
+    const w = step * (0.62 + hash(idx * 3.1) * 0.3);
+    roundRect(x, baseY - h, w, h + 260, Math.min(w / 2, 26));
+    ctx.fill();
+  }
+}
+
+function drawTerrain(L) {
+  const bottom = L.water + 300;
+  for (const c of L.terrain.chunks) {
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, bottom);
+    for (const p of c) ctx.lineTo(p.x, p.y);
+    ctx.lineTo(c[c.length - 1].x, bottom);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(0, c[0].y - 40, 0, c[0].y + 320);
+    g.addColorStop(0, "#0b3f86");
+    g.addColorStop(0.3, "#062a63");
+    g.addColorStop(1, "#01143c");
+    ctx.fillStyle = g; ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, c[0].y);
+    for (const p of c) ctx.lineTo(p.x, p.y);
+    ctx.lineWidth = 8; ctx.strokeStyle = C.bright;
+    ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.stroke();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.stroke();
+  }
+}
+
+function drawWater(L, t) {
+  const y = L.water;
+  ctx.save();
+  const g = ctx.createLinearGradient(0, y, 0, y + 220);
+  g.addColorStop(0, "rgba(127,212,255,0.42)");
+  g.addColorStop(1, "rgba(10,78,168,0.9)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(Game.camX - 40, y + 220);
+  for (let x = -40; x < VW + 60; x += 14) {
+    const wx = Game.camX + x;
+    ctx.lineTo(wx, y + Math.sin(wx * 0.017 + t * 2.2) * 5 + Math.sin(wx * 0.041 - t * 1.4) * 3);
+  }
+  ctx.lineTo(Game.camX + VW + 60, y + 220);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(200,240,255,0.6)"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.restore();
+}
+
+/* the ripple itself — the brand circle, expanding */
+function drawRipples(L) {
+  ctx.save();
+  for (const rp of L.ripples) {
+    const k = 1 - rp.r / rp.max;
+    ctx.globalAlpha = Math.max(0, k) * (rp.chain === 0 ? 0.9 : 0.65);
+    ctx.strokeStyle = C.bright;
+    ctx.lineWidth = 2 + k * (rp.chain === 0 ? 5 : 3);
+    ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r, 0, TAU); ctx.stroke();
+    ctx.globalAlpha *= 0.4;
+    ctx.strokeStyle = C.white; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r * 0.82, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawNode(n) {
+  ctx.save();
+  ctx.translate(n.x, n.y);
+  const pop = 1 + n.pop * 0.32;
+  if (n.on) {
+    const fade = clamp(n.life / 1.6, 0, 1);
+    ctx.globalAlpha = 0.16 * fade;
+    ctx.fillStyle = C.bright;
+    ctx.beginPath(); ctx.arc(0, 0, n.r * 2.1 * pop, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.beginPath(); ctx.arc(0, 0, n.r * pop, 0, TAU);
+    const g = ctx.createRadialGradient(-6, -8, 2, 0, 0, n.r * 1.2);
+    g.addColorStop(0, "#2e8ae0"); g.addColorStop(1, C.blue);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = 3.5; ctx.strokeStyle = C.bright; ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.beginPath(); ctx.arc(0, 0, n.r * 0.55 * pop, 0, TAU); ctx.stroke();
+
+    /* countdown arc — how long before it fades back to dormant */
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = n.life < 2 ? C.warn : "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.arc(0, 0, n.r + 8, -Math.PI / 2, -Math.PI / 2 + TAU * (n.life / NODE_LIFE));
+    ctx.stroke();
+
+    if (n.type === "calm") {
+      ctx.globalAlpha = 0.45; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = C.white; ctx.setLineDash([5, 7]);
+      ctx.beginPath(); ctx.arc(0, 0, 150, 0, TAU); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  } else {
+    const br = 0.5 + Math.sin(n.ph) * 0.14;
+    ctx.globalAlpha = 0.42 + br * 0.18;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = n.type === "calm" ? "rgba(255,255,255,0.85)" : C.bright;
+    ctx.setLineDash([7, 6]);
+    ctx.beginPath(); ctx.arc(0, 0, n.r, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath(); ctx.arc(0, 0, n.r * 0.42, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPulse(p) {
+  if (p.got) return;
+  const y = p.y + Math.sin(p.ph) * 5;
+  ctx.save();
+  ctx.globalAlpha = 0.2; ctx.fillStyle = C.bright;
+  ctx.beginPath(); ctx.arc(p.x, y, 17, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 3; ctx.strokeStyle = C.bright;
+  ctx.beginPath(); ctx.arc(p.x, y, 10, 0, TAU); ctx.stroke();
+  ctx.fillStyle = C.white;
+  ctx.beginPath(); ctx.arc(p.x, y, 4, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawSpikes(s) {
+  const w = s.n * 26, x0 = s.x - w / 2;
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < s.n; i++) {
+    const x = x0 + i * 26;
+    ctx.moveTo(x, s.y + 2); ctx.lineTo(x + 13, s.y - 26); ctx.lineTo(x + 26, s.y + 2);
+  }
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, s.y - 26, 0, s.y);
+  g.addColorStop(0, C.inert2); g.addColorStop(1, C.inert);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = C.dark; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+  ctx.fillStyle = C.dark;
+  roundRect(x0 - 4, s.y - 1, w + 8, 11, 4); ctx.fill();
+  ctx.restore();
+}
+
+/* obstacles: grey and frowning until a ripple calms them, then
+   brand blue and harmless. The ripple helps rather than destroys. */
+function drawObstacle(o, t) {
+  ctx.save();
+  if (o.gone) {
+    const k = Math.min(1, o.goneT * 4);
+    ctx.globalAlpha = 1 - k;
+    ctx.translate(o.x, o.y + k * 30); ctx.scale(1 + k * 0.5, 1 - k * 0.7);
+  } else {
+    ctx.translate(o.x, o.y);
+    const s = 1 + Math.sin(t * 4 + o.x) * 0.025 + o.sq * 0.22;
+    ctx.scale(s, 2 - s);
+  }
+  const w = o.w, h = o.h;
+  ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = "#000";
+  ctx.beginPath(); ctx.ellipse(0, h / 2 + 6, w * 0.46, 7, 0, 0, TAU); ctx.fill(); ctx.restore();
+
+  const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  if (o.calm) { g.addColorStop(0, "#2e8ae0"); g.addColorStop(1, C.blue); }
+  else { g.addColorStop(0, C.inert2); g.addColorStop(1, C.inert); }
+  ctx.fillStyle = g;
+  roundRect(-w / 2, -h / 2, w, h, 12); ctx.fill();
+  ctx.strokeStyle = o.calm ? C.bright : C.dark; ctx.lineWidth = 3; ctx.stroke();
+
+  const look = o.calm ? 0 : o.dir * 3;
+  ctx.fillStyle = C.white;
+  ctx.beginPath(); ctx.ellipse(-10 + look, -6, 8, 8.5, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10 + look, -6, 8, 8.5, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = "#0b1a2e";
+  ctx.beginPath(); ctx.arc(-9 + look * 1.6, -5, 3.6, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(11 + look * 1.6, -5, 3.6, 0, TAU); ctx.fill();
+  ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#0b1a2e";
+  ctx.beginPath();
+  if (o.calm) ctx.arc(0, 6, 8, 0.15 * Math.PI, 0.85 * Math.PI);       // smile
+  else ctx.arc(0, 20, 9, 1.15 * Math.PI, 1.85 * Math.PI);             // frown
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawStall(st, t) {
+  if (!st.active) return;
+  ctx.save();
+  ctx.translate(st.x, st.y);
+  const s = 1 + st.sq * 0.2 + Math.sin(t * 3) * 0.02;
+  ctx.scale(s, 2 - s);
+  const w = st.w, h = st.h;
+
+  ctx.save(); ctx.globalAlpha = 0.26; ctx.fillStyle = "#000";
+  ctx.beginPath(); ctx.ellipse(0, h / 2 + 8, w * 0.5, 10, 0, 0, TAU); ctx.fill(); ctx.restore();
+
+  const flash = st.hitT > 0 && Math.floor(st.hitT * 14) % 2 === 0;
+  const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  if (flash) { g.addColorStop(0, C.white); g.addColorStop(1, C.bright); }
+  else { g.addColorStop(0, C.inert2); g.addColorStop(1, C.dark); }
+  ctx.fillStyle = g;
+  roundRect(-w / 2, -h / 2, w, h, 18); ctx.fill();
+  ctx.strokeStyle = "#1c2635"; ctx.lineWidth = 4; ctx.stroke();
+
+  ctx.fillStyle = C.white;
+  ctx.beginPath(); ctx.ellipse(-20, -12, 14, 15, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(20, -12, 14, 15, 0, 0, TAU); ctx.fill();
+  const look = clamp((Game.ball.x - st.x) / 220, -1, 1) * 5;
+  ctx.fillStyle = "#0b1a2e";
+  ctx.beginPath(); ctx.arc(-18 + look * 2, -11, 6.5, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(22 + look * 2, -11, 6.5, 0, TAU); ctx.fill();
+  ctx.strokeStyle = "#0b1a2e"; ctx.lineWidth = 5; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(0, 46, 22, 1.2 * Math.PI, 1.8 * Math.PI); ctx.stroke();
+  ctx.restore();
+
+  if (st.hp > 0) {
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const x = st.x - 34 + i * 34, y = st.y - st.h / 2 - 28;
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU);
+      ctx.fillStyle = i < st.hp ? C.inert2 : C.bright;
+      ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawCheckpoint(c, t) {
+  ctx.save();
+  ctx.strokeStyle = c.on ? C.bright : "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 4; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(c.x, c.y - 70); ctx.stroke();
+  ctx.beginPath(); ctx.arc(c.x, c.y - 78, c.on ? 15 : 11, 0, TAU);
+  ctx.lineWidth = 3.5; ctx.strokeStyle = c.on ? C.bright : "rgba(255,255,255,0.4)"; ctx.stroke();
+  if (c.on) {
+    ctx.fillStyle = C.bright; ctx.globalAlpha = 0.9;
+    ctx.beginPath(); ctx.arc(c.x, c.y - 78, 6, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.14;
+    ctx.beginPath(); ctx.arc(c.x, c.y - 78, 34 + Math.sin(t * 3) * 5, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGoal(g, t, open) {
+  ctx.save();
+  const y = g.y - 54;
+  const pulse = 1 + Math.sin(g.ph) * 0.06;
+  if (open) {
+    ctx.globalAlpha = 0.2; ctx.fillStyle = C.bright;
+    ctx.beginPath(); ctx.arc(g.x, y, 74 * pulse, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 4; i++) {
+      const r = 24 + i * 13, ph = g.ph * (1 + i * 0.3);
+      ctx.beginPath(); ctx.arc(g.x, y, r * pulse, ph, ph + Math.PI * 1.4);
+      ctx.strokeStyle = i % 2 ? C.white : C.bright;
+      ctx.lineWidth = 5 - i * 0.7; ctx.lineCap = "round"; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(g.x, y, 13, 0, TAU); ctx.fillStyle = C.white; ctx.fill();
+  } else {
+    ctx.globalAlpha = 0.35; ctx.setLineDash([9, 9]);
+    ctx.beginPath(); ctx.arc(g.x, y, 34, 0, TAU);
+    ctx.strokeStyle = "#9fb6d8"; ctx.lineWidth = 4; ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.fillStyle = "#9fb6d8"; ctx.font = "700 12px system-ui,sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("CLEAR THE STALL", g.x, y + 62);
+  }
+  ctx.restore();
+}
+
+function drawBall(b) {
+  ctx.save();
+  const gy = Game.level.terrain.at(b.x);
+  if (gy !== null && gy - b.y < 300) {
+    const k = clamp(1 - (gy - b.y) / 300, 0, 1);
+    ctx.globalAlpha = 0.26 * k; ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(b.x, gy - 3, b.r * (0.6 + k * 0.5), 6 * k + 2, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  if (b.invuln > 0 && Math.floor(b.invuln * 14) % 2 === 0) ctx.globalAlpha = 0.35;
+
+  /* recharge arc around the ball */
+  if (b.cd > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = C.bright; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r + 9, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - b.cd / RIPPLE_CD));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.translate(b.x, b.y);
+  ctx.scale(b.sqx, b.sqy);
+  ctx.save();
+  ctx.rotate(b.rot);
+  const g = ctx.createRadialGradient(-b.r * 0.3, -b.r * 0.38, 2, 0, 0, b.r * 1.25);
+  g.addColorStop(0, "#ffffff"); g.addColorStop(0.6, C.white); g.addColorStop(1, "#c7ddf7");
+  ctx.beginPath(); ctx.arc(0, 0, b.r, 0, TAU);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 3.4; ctx.strokeStyle = C.blue; ctx.stroke();
+  ctx.strokeStyle = "rgba(10,78,168,0.4)"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * TAU;
+    ctx.beginPath(); ctx.arc(0, 0, b.r * 0.62, a, a + 0.5); ctx.stroke();
+  }
+  ctx.restore();
+
+  const look = clamp(b.vx / 340, -1, 1), eo = 5 * look;
+  const open = b.blink > 0 ? 1.4 : 7.2;
+  ctx.fillStyle = "#0b2a55";
+  ctx.beginPath(); ctx.ellipse(-6 + eo, -4.5, 3.4, open * 0.62, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6.5 + eo, -4.5, 3.4, open * 0.62, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = "#0b2a55"; ctx.lineWidth = 2.1; ctx.lineCap = "round";
+  ctx.beginPath();
+  if (!b.grounded && b.vy < -100) ctx.arc(eo * 0.6, 7, 3.4, 0, TAU);
+  else ctx.arc(eo * 0.6, 4, 4.6, 0.25 * Math.PI, 0.75 * Math.PI);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of parts) {
+    ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFloaters() {
+  ctx.save();
+  ctx.textAlign = "center";
+  for (const f of floaters) {
+    ctx.globalAlpha = clamp(f.life / f.max, 0, 1);
+    const big = f.depth >= 3;
+    ctx.font = "800 " + (big ? 20 : 15) + "px system-ui,sans-serif";
+    ctx.fillStyle = big ? C.white : C.bright;
+    ctx.fillText(f.txt, f.x, f.y);
+  }
+  ctx.restore();
+}
+
+/* ---------- HUD -------------------------------------------- */
+const btns = {};
+function layoutButtons() {
+  const r = 40, m = 24, by = VH - r - 24;
+  btns.left   = { x: m + r, y: by, r };
+  btns.right  = { x: m + r * 3 + 20, y: by, r };
+  btns.ripple = { x: VW - m - 48 - 112, y: by, r: 46 };
+  btns.jump   = { x: VW - m - 48, y: by, r: 48 };
+  btns.pause  = { x: 32, y: 30, r: 18 };
+}
+function pointerIn(b) {
+  for (const p of Input.pointers.values())
+    if (Math.hypot(p.x - b.x, p.y - b.y) < b.r + 14) return true;
+  return false;
+}
+function drawButton(b, glyph, active) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU);
+  ctx.fillStyle = active ? "rgba(127,212,255,0.32)" : "rgba(255,255,255,0.12)";
+  ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = active ? C.bright : "rgba(255,255,255,0.45)"; ctx.stroke();
+  ctx.strokeStyle = "#fff"; ctx.fillStyle = "#fff";
+  ctx.lineWidth = 4.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const s = b.r * 0.4;
+  ctx.beginPath();
+  if (glyph === "left")  { ctx.moveTo(b.x + s * 0.5, b.y - s); ctx.lineTo(b.x - s * 0.5, b.y); ctx.lineTo(b.x + s * 0.5, b.y + s); ctx.stroke(); }
+  if (glyph === "right") { ctx.moveTo(b.x - s * 0.5, b.y - s); ctx.lineTo(b.x + s * 0.5, b.y); ctx.lineTo(b.x - s * 0.5, b.y + s); ctx.stroke(); }
+  if (glyph === "up")    { ctx.moveTo(b.x - s, b.y + s * 0.5); ctx.lineTo(b.x, b.y - s * 0.6); ctx.lineTo(b.x + s, b.y + s * 0.5); ctx.stroke(); }
+  if (glyph === "pause") { ctx.fillRect(b.x - 6, b.y - 8, 4.5, 16); ctx.fillRect(b.x + 1.5, b.y - 8, 4.5, 16); }
+  ctx.restore();
+}
+function drawRippleButton(b, ready, cd) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU);
+  ctx.fillStyle = ready ? "rgba(127,212,255,0.24)" : "rgba(255,255,255,0.08)";
+  ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = ready ? C.bright : "rgba(255,255,255,0.3)"; ctx.stroke();
+  /* concentric rings = the campaign device, used as the button icon */
+  ctx.globalAlpha = ready ? 1 : 0.4;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, 7 + i * 8, 0, TAU);
+    ctx.strokeStyle = i === 0 ? "#fff" : C.bright;
+    ctx.lineWidth = 3 - i * 0.6; ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (!ready) {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r - 2, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - cd / RIPPLE_CD));
+    ctx.strokeStyle = C.bright; ctx.lineWidth = 3.5; ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawHeart(x, y, s, filled) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.moveTo(0, 5);
+  ctx.bezierCurveTo(-9, -3, -8, -11, -3.5, -11);
+  ctx.bezierCurveTo(-1, -11, 0, -8.5, 0, -7);
+  ctx.bezierCurveTo(0, -8.5, 1, -11, 3.5, -11);
+  ctx.bezierCurveTo(8, -11, 9, -3, 0, 5);
+  ctx.closePath();
+  ctx.fillStyle = filled ? C.bright : "rgba(255,255,255,0.15)";
+  ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = filled ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.25)";
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawHUD() {
+  const L = Game.level;
+  ctx.save();
+  drawButton(btns.pause, "pause", false);
+  for (let i = 0; i < 3; i++) drawHeart(62 + i * 24, 30, 1.45, i < Game.hearts);
+
+  ctx.font = "800 12px system-ui,-apple-system,sans-serif";
+  ctx.textAlign = "center";
+  const label = (Game.levelIdx + 1) + " · " + L.def.name;
+  const w = ctx.measureText(label).width + 30;
+  ctx.fillStyle = "rgba(0,16,63,0.55)";
+  roundRect(VW / 2 - w / 2, 16, w, 26, 13); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.fillText(label, VW / 2, 33);
+
+  ctx.textAlign = "right";
+  ctx.font = "800 22px system-ui,sans-serif";
+  ctx.fillStyle = C.white;
+  ctx.fillText(String(Game.score), VW - 24, 36);
+  ctx.font = "700 11px system-ui,sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.fillText(Game.bestChain > 1 ? "BEST CHAIN ×" + Game.bestChain : "IMPACT", VW - 24, 52);
+
+  drawButton(btns.left, "left", Input.left);
+  drawButton(btns.right, "right", Input.right);
+  drawRippleButton(btns.ripple, Game.ball.cd <= 0, Math.max(0, Game.ball.cd));
+  drawButton(btns.jump, "up", Input.jump);
+  ctx.restore();
+}
+
+/* ---------- overlay helpers -------------------------------- */
+function panel(w, h, alpha) {
+  ctx.save();
+  ctx.fillStyle = "rgba(0,16,63," + (alpha === undefined ? 0.9 : alpha) + ")";
+  roundRect(VW / 2 - w / 2, VH / 2 - h / 2, w, h, 22); ctx.fill();
+  ctx.strokeStyle = "rgba(127,212,255,0.35)"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+}
+function centreText(txt, y, size, col, weight) {
+  ctx.font = (weight || 800) + " " + size + "px system-ui,-apple-system,sans-serif";
+  ctx.textAlign = "center"; ctx.fillStyle = col;
+  ctx.fillText(txt, VW / 2, y);
+}
+function bigButton(label, y, w, h, primary) {
+  w = w || 250; h = h || 52;
+  if (primary === undefined) primary = true;
+  const x = VW / 2 - w / 2;
+  let hot = false;
+  for (const p of Input.pointers.values())
+    if (p.x > x && p.x < x + w && p.y > y - h / 2 && p.y < y + h / 2) hot = true;
+  ctx.save();
+  if (primary) {
+    const g = ctx.createLinearGradient(0, y - h / 2, 0, y + h / 2);
+    g.addColorStop(0, hot ? "#3f9bea" : C.mid);
+    g.addColorStop(1, hot ? "#0d63cf" : C.blue);
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = hot ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.08)";
+  roundRect(x, y - h / 2, w, h, h / 2); ctx.fill();
+  ctx.strokeStyle = primary ? C.bright : "rgba(255,255,255,0.3)"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = "800 17px system-ui,sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(label, VW / 2, y + 6);
+  ctx.restore();
+  return { x: x, y: y - h / 2, w: w, h: h };
+}
+function tappedIn(r) {
+  return Input.tapped && Input.tapPos &&
+    Input.tapPos.x > r.x && Input.tapPos.x < r.x + r.w &&
+    Input.tapPos.y > r.y && Input.tapPos.y < r.y + r.h;
+}
+
+/* the brand ring device, drawn at any size */
+function ringMark(x, y, s, alpha, phase) {
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(x, y, s * (0.36 + i * 0.32) * (1 + Math.sin((phase || 0) + i * 0.8) * 0.03), 0, TAU);
+    ctx.strokeStyle = i === 0 ? C.white : C.bright;
+    ctx.lineWidth = s * (0.1 - i * 0.02);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+function drawPreload() {
+  bg();
+  const e = smooth(clamp(Game.stateT / 1.1, 0, 1));
+  ctx.save();
+  for (let i = 0; i < 4; i++) {
+    const d = clamp((Game.stateT - i * 0.16) / 0.7, 0, 1);
+    if (d <= 0) continue;
+    ctx.globalAlpha = 0.9 * (1 - d * 0.35);
+    ctx.beginPath();
+    ctx.arc(VW / 2, VH / 2 - 18, 26 + i * 30 * smooth(d), -Math.PI / 2, -Math.PI / 2 + TAU * smooth(d));
+    ctx.strokeStyle = i === 0 ? C.white : C.bright;
+    ctx.lineWidth = 5 - i * 0.9; ctx.lineCap = "round"; ctx.stroke();
+  }
+  ctx.globalAlpha = e;
+  centreText("NOVO NORDISK", VH / 2 + 112, 15, "rgba(255,255,255,0.85)", 700);
+  ctx.globalAlpha = e * 0.45;
+  centreText("loading", VH - 40, 11, "#bcd6ff", 600);
+  ctx.restore();
+  if (Game.stateT > 2.0 || (Input.tapped && Game.stateT > 0.6)) { Game.setState("title"); Input.tapped = false; }
+}
+
+function drawTitle(t, dt) {
+  bg();
+  bgRings(t, t * 26);
+  horizon(t * 14, 1, "rgba(6,42,99,0.85)", VH * 0.80, 70, 150, 120);
+  ctx.save();
+  const gg = ctx.createLinearGradient(0, VH * 0.88, 0, VH);
+  gg.addColorStop(0, "#0b3f86"); gg.addColorStop(1, "#01143c");
+  ctx.fillStyle = gg; ctx.fillRect(0, VH * 0.88, VW, VH);
+  ctx.strokeStyle = C.bright; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(0, VH * 0.88); ctx.lineTo(VW, VH * 0.88); ctx.stroke();
+  ctx.restore();
+
+  /* hero ball bouncing, dropping a ripple on every landing */
+  const tb = Game.titleBall;
+  tb.vy += 2100 * dt; tb.y += tb.vy * dt;
+  const floor = VH * 0.88 - 24;
+  if (tb.y > floor) { tb.y = floor; tb.vy = -420; Game.titleRipples.push({ r: 6, a: 1 }); }
+  tb.rot += dt * 3;
+  Game.titleRipples.forEach(r => { r.r += dt * 420; r.a -= dt * 0.85; });
+  Game.titleRipples = Game.titleRipples.filter(r => r.a > 0);
+
+  ctx.save();
+  for (const r of Game.titleRipples) {
+    ctx.globalAlpha = r.a * 0.7;
+    ctx.strokeStyle = C.bright; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(VW / 2, floor + 22, r.r, r.r * 0.28, 0, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(VW / 2, tb.y);
+  ctx.save(); ctx.rotate(tb.rot);
+  const g = ctx.createRadialGradient(-8, -10, 2, 0, 0, 30);
+  g.addColorStop(0, "#fff"); g.addColorStop(0.6, C.white); g.addColorStop(1, "#c7ddf7");
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, TAU); ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = C.blue; ctx.stroke();
+  ctx.strokeStyle = "rgba(10,78,168,0.4)"; ctx.lineWidth = 3.5; ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) { const a = (i / 3) * TAU; ctx.beginPath(); ctx.arc(0, 0, 15, a, a + 0.5); ctx.stroke(); }
+  ctx.restore();
+  ctx.fillStyle = "#0b2a55";
+  ctx.beginPath(); ctx.ellipse(-7, -5, 3.4, 4.6, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(7, -5, 3.4, 4.6, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = "#0b2a55"; ctx.lineWidth = 2.4; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(0, 4, 6, 0.25 * Math.PI, 0.75 * Math.PI); ctx.stroke();
+  ctx.restore();
+
+  ringMark(VW / 2, VH * 0.19, 44, 0.9, t * 1.4);
+  centreText("RIPPLE", VH * 0.40, 62, "#fff", 900);
+  ctx.save(); ctx.globalAlpha = 0.7;
+  centreText("One small action. A much wider response.", VH * 0.40 + 26, 14, "#bcd6ff", 600);
+  ctx.restore();
+
+  const play = bigButton("PLAY", VH * 0.60);
+  const info = bigButton("WHY WE'RE HERE", VH * 0.60 + 60, 200, 40, false);
+  ctx.save(); ctx.globalAlpha = 0.4;
+  centreText("← → move   ·   ↑ jump   ·   E / ↓ ripple   ·   P pause   ·   M mute", VH - 20, 12, "#fff", 500);
+  ctx.restore();
+
+  if (tappedIn(play) || Input.keys.Enter) { Game.setState("select"); Input.tapped = false; }
+  else if (tappedIn(info)) { Game.setState("info"); Input.tapped = false; }
+}
+
+/* the "why we're here" page from the client brief */
+const INFO_LINES = [
+  ["h", "We make medicine. So what are we doing at Gamescom?"],
+  ["p", "Novo Nordisk has spent a century working on serious chronic diseases —"],
+  ["p", "diabetes, obesity, cardiovascular and rare conditions. Millions of people"],
+  ["p", "live with them. Many more will, and won't find out for years."],
+  ["s", ""],
+  ["p", "The people most likely to be affected aren't sitting in waiting rooms."],
+  ["p", "They're here. They're in this queue. So we came here instead."],
+  ["s", ""],
+  ["h", "About the game"],
+  ["p", "One tap sends out a ripple. That ripple wakes another, and another."],
+  ["p", "Health rarely changes in a single dramatic moment. It changes because"],
+  ["p", "of small actions that keep spreading."],
+  ["s", ""],
+  ["p", "The circles come from our logo. The waiting comes from the queue"],
+  ["p", "you're standing in."]
+];
+
+function drawInfo(t) {
+  bg(); bgRings(t, t * 18);
+  ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.74)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  ringMark(VW / 2 - 300, 54, 26, 0.75, t);
+
+  let y = 96;
+  ctx.textAlign = "left";
+  for (let i = 0; i < INFO_LINES.length; i++) {
+    const kind = INFO_LINES[i][0], txt = INFO_LINES[i][1];
+    if (kind === "s") { y += 11; continue; }
+    if (kind === "h") {
+      y += 9;
+      ctx.font = "800 17px system-ui,sans-serif"; ctx.fillStyle = C.bright;
+    } else {
+      ctx.font = "500 14px system-ui,sans-serif"; ctx.fillStyle = "rgba(255,255,255,0.86)";
+    }
+    ctx.fillText(txt, VW / 2 - 300, y);
+    y += kind === "h" ? 27 : 20;
+  }
+  ctx.textAlign = "center";
+  ctx.font = "800 16px system-ui,sans-serif"; ctx.fillStyle = "#fff";
+  ctx.fillText("Some things are worth the wait. Your health isn't.", VW / 2, y + 20);
+  ctx.font = "600 11px system-ui,sans-serif"; ctx.fillStyle = "rgba(188,214,255,0.65)";
+  ctx.fillText("See what we're working on → novonordisk.com", VW / 2, y + 40);
+  ctx.fillStyle = "rgba(188,214,255,0.4)";
+  ctx.fillText("Concept prototype — logo, colours and type are placeholders pending brand guidelines.", VW / 2, y + 60);
+
+  const back = bigButton("BACK", VH - 40, 160, 36, false);
+  if (tappedIn(back) || Input.keys.Escape) { Game.setState("title"); Input.tapped = false; }
+}
+
+function drawSelect(t) {
+  bg(); bgRings(t, t * 20);
+  horizon(t * 12, 1, "rgba(6,42,99,0.7)", VH * 0.86, 60, 130, 110);
+  ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.58)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+  centreText("CHOOSE A STAGE", 76, 26, "#fff", 900);
+
+  const cardW = 176, cardH = 184, gap = 18;
+  const totalW = LEVELS.length * cardW + (LEVELS.length - 1) * gap;
+  const x0 = VW / 2 - totalW / 2, y0 = VH / 2 - cardH / 2 + 12;
+
+  for (let i = 0; i < LEVELS.length; i++) {
+    const L = LEVELS[i], x = x0 + i * (cardW + gap);
+    const locked = i + 1 > Save.unlocked;
+    const best = Save.best[String(i)];
+    let hot = false;
+    for (const p of Input.pointers.values())
+      if (p.x > x && p.x < x + cardW && p.y > y0 && p.y < y0 + cardH) hot = true;
+
+    ctx.save();
+    ctx.globalAlpha = locked ? 0.38 : 1;
+    ctx.fillStyle = hot && !locked ? "rgba(127,212,255,0.16)" : "rgba(255,255,255,0.07)";
+    roundRect(x, y0 - (hot && !locked ? 5 : 0), cardW, cardH, 18); ctx.fill();
+    ctx.strokeStyle = locked ? "rgba(255,255,255,0.16)" : C.bright;
+    ctx.lineWidth = 2.5; ctx.stroke();
+
+    ringMark(x + cardW / 2, y0 + 54, 28, locked ? 0.3 : 0.95, t + i);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = "800 13px system-ui,sans-serif";
+    ctx.fillText(L.name, x + cardW / 2, y0 + 112);
+    if (locked) {
+      ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = "700 11px system-ui,sans-serif";
+      ctx.fillText("LOCKED", x + cardW / 2, y0 + 146);
+    } else if (best) {
+      ctx.fillStyle = C.bright; ctx.font = "800 15px system-ui,sans-serif";
+      ctx.fillText(String(best.score), x + cardW / 2, y0 + 143);
+      ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.font = "600 11px system-ui,sans-serif";
+      ctx.fillText("best chain ×" + best.chain, x + cardW / 2, y0 + 160);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "600 11px system-ui,sans-serif";
+      ctx.fillText("not cleared", x + cardW / 2, y0 + 146);
+    }
+    ctx.restore();
+
+    if (!locked && Input.tapped && Input.tapPos &&
+        Input.tapPos.x > x && Input.tapPos.x < x + cardW &&
+        Input.tapPos.y > y0 && Input.tapPos.y < y0 + cardH) {
+      Input.tapped = false; Game.start(i); return;
+    }
+  }
+  ctx.save(); ctx.globalAlpha = 0.4;
+  centreText((Save.totalRipples || 0).toLocaleString() + " ripples started on this device",
+    VH - 38, 12, "#fff", 500);
+  ctx.restore();
+}
+
+function drawWorld(t) {
+  const L = Game.level;
+  bg();
+  bgRings(t, Game.camX);
+  horizon(Game.camX, 0.16, "rgba(1,42,112,0.9)", VH * 0.74, 90, 190, 140);
+  horizon(Game.camX, 0.34, "rgba(1,30,84,0.95)", VH * 0.86, 70, 150, 105);
+
+  ctx.save();
+  let sx = 0, sy = 0;
+  if (Game.shake > 0) { sx = rnd(-Game.shake, Game.shake); sy = rnd(-Game.shake, Game.shake); }
+  ctx.translate(-Game.camX + sx, -Game.camY + sy);
+
+  for (const c of L.checkpoints) drawCheckpoint(c, t);
+  drawTerrain(L);
+  for (const s of L.spikes) drawSpikes(s);
+  for (const p of L.pulses) drawPulse(p);
+  for (const n of L.nodes) drawNode(n);
+  drawGoal(L.goal, t, L.stallCleared);
+  for (const o of L.obstacles) drawObstacle(o, t);
+  if (L.stall) drawStall(L.stall, t);
+  drawRipples(L);
+  drawBall(Game.ball);
+  drawParticles();
+  drawFloaters();
+  drawWater(L, t);
+  ctx.restore();
+
+  if (L.stall && L.stall.active && L.stall.roar > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, L.stall.roar);
+    ctx.fillStyle = "rgba(127,212,255,0.14)";
+    ctx.fillRect(0, VH / 2 - 52, VW, 104);
+    centreText("THE STALL", VH / 2 - 2, 38, "#fff", 900);
+    centreText("it only moves when you ripple it", VH / 2 + 26, 13, C.bright, 600);
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   MAIN LOOP
+   ============================================================ */
+let last = performance.now(), acc = 0;
+const STEP = 1 / 120;
+
+function frame(now) {
+  const raw = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  Game.t += raw; Game.stateT += raw;
+  readKeys();
+
+  if (Game.state === "play") {
+    layoutButtons();
+    const jNow = pointerIn(btns.jump);
+    if (jNow && !Input._jPrev) Input.jumpPressed = true;
+    Input._jPrev = jNow;
+    const rNow = pointerIn(btns.ripple);
+    if (rNow && !Input._rPrev) Input.ripplePressed = true;
+    Input._rPrev = rNow;
+    Input.left  = Input.left  || pointerIn(btns.left);
+    Input.right = Input.right || pointerIn(btns.right);
+    Input.jump  = Input.jump  || jNow;
+    if (Input.tapped && Input.tapPos &&
+        Math.hypot(Input.tapPos.x - btns.pause.x, Input.tapPos.y - btns.pause.y) < 30) {
+      Game.togglePause(); Input.tapped = false;
+    }
+  }
+
+  if (Game.state === "play") {
+    acc += raw;
+    let steps = 0;
+    while (acc >= STEP && steps < 8) { updatePlay(STEP); acc -= STEP; steps++; if (Game.state !== "play") break; }
+  } else acc = 0;
+
+  updateParticles(raw);
+  updateFloaters(raw);
+  Game.shake = Math.max(0, Game.shake - raw * 60);
+
+  clearFrame();
+  switch (Game.state) {
+    case "preload": drawPreload(); break;
+    case "title":   drawTitle(Game.t, raw); break;
+    case "info":    drawInfo(Game.t); break;
+    case "select":  drawSelect(Game.t); break;
+
+    case "play":
+      drawWorld(Game.t); drawHUD();
+      if (Game.transition > 0) {
+        Game.transition -= raw * 1.6;
+        ctx.save(); ctx.globalAlpha = clamp(Game.transition, 0, 1);
+        ctx.fillStyle = C.deep; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      }
+      break;
+
+    case "pause": {
+      drawWorld(Game.t); drawHUD();
+      ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.78)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      centreText("PAUSED", VH / 2 - 64, 36, "#fff", 900);
+      const r = bigButton("RESUME", VH / 2 + 4);
+      const q = bigButton("STAGES", VH / 2 + 70, 200, 44, false);
+      if (tappedIn(r)) { Game.setState("play"); Input.tapped = false; }
+      else if (tappedIn(q)) { Game.setState("select"); Input.tapped = false; }
+      break;
+    }
+
+    case "dead": {
+      drawWorld(Game.t); drawHUD();
+      ctx.save(); ctx.globalAlpha = clamp(Game.stateT * 1.6, 0, 0.66);
+      ctx.fillStyle = "#3a1030"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      centreText("SETBACK", VH / 2 - 4, 38, "#fff", 900);
+      ctx.save(); ctx.globalAlpha = 0.6;
+      centreText(Game.hearts + (Game.hearts === 1 ? " try left" : " tries left"), VH / 2 + 26, 14, "#fff", 600);
+      ctx.restore();
+      if (Game.stateT > 1.05) Game.respawn();
+      break;
+    }
+
+    case "complete": {
+      drawWorld(Game.t);
+      ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.86)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      panel(480, 350);
+      ringMark(VW / 2, VH / 2 - 126, 28, 0.9, Game.t * 1.5);
+      centreText("STAGE CLEAR", VH / 2 - 84, 26, C.bright, 900);
+      centreText(String(Game.score), VH / 2 - 46, 38, "#fff", 900);
+      ctx.save(); ctx.globalAlpha = 0.75;
+      centreText("biggest chain ×" + Game.bestChain + "   ·   " + Game.ripplesFired + " ripples started",
+        VH / 2 - 22, 12, "#bcd6ff", 600);
+      ctx.restore();
+
+      /* the campaign line, and the route to the corporate site */
+      centreText("Some things are worth the wait.", VH / 2 + 10, 16, "#fff", 800);
+      centreText("Your health isn't.", VH / 2 + 31, 16, C.bright, 800);
+      ctx.save(); ctx.globalAlpha = 0.6;
+      centreText("We're Novo Nordisk. See what we're working on → novonordisk.com",
+        VH / 2 + 54, 11, "#bcd6ff", 600);
+      ctx.restore();
+
+      const hasNext = Game.levelIdx + 1 < LEVELS.length;
+      const a = bigButton(hasNext ? "NEXT STAGE" : "CHOOSE STAGE", VH / 2 + 96);
+      const b = bigButton("REPLAY", VH / 2 + 150, 170, 40, false);
+      if (tappedIn(a)) {
+        Input.tapped = false;
+        if (hasNext) Game.start(Game.levelIdx + 1); else Game.setState("select");
+      } else if (tappedIn(b)) { Input.tapped = false; Game.start(Game.levelIdx); }
+      break;
+    }
+
+    case "gameover": {
+      drawWorld(Game.t);
+      ctx.save(); ctx.fillStyle = "rgba(0,16,63,0.88)"; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      panel(420, 264);
+      centreText("OUT OF TRIES", VH / 2 - 78, 26, "#fff", 900);
+      centreText(String(Game.score), VH / 2 - 42, 34, C.bright, 900);
+      ctx.save(); ctx.globalAlpha = 0.7;
+      centreText("Some things are worth the wait. Your health isn't.", VH / 2 - 10, 13, "#bcd6ff", 600);
+      ctx.restore();
+      const a = bigButton("TRY AGAIN", VH / 2 + 32);
+      const b = bigButton("CHOOSE STAGE", VH / 2 + 88, 180, 40, false);
+      if (tappedIn(a)) { Input.tapped = false; Game.start(Game.levelIdx); }
+      else if (tappedIn(b)) { Input.tapped = false; Game.setState("select"); }
+      break;
+    }
+  }
+
+  Input.tapped = false; Input.tapPos = null;
+  requestAnimationFrame(frame);
+}
+
+resize();
+Game.titleBall.y = VH * 0.5;
+if (WARP_STAGE >= 1 && WARP_STAGE <= LEVELS.length) Game.start(WARP_STAGE - 1);
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
