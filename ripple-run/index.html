@@ -170,8 +170,14 @@ function assignRole(id, p) {
   layoutButtons();
   const near = bt => Math.hypot(p.x - bt.x, p.y - bt.y) < bt.r + 14;
   if (near(btns.pause)) { Input.roles.set(id, "ui"); return; }
-  if (near(btns.jump))   { Input.roles.set(id, "jump");   Input.jumpPressed = true;   return; }
   if (near(btns.ripple)) { Input.roles.set(id, "ripple"); Input.ripplePressed = true; return; }
+  /* anything else on the right-hand side is a jump — no target to miss */
+  if (p.x >= VW * JUMP_ZONE) {
+    Input.roles.set(id, "jump");
+    Input.jumpPressed = true;
+    hudFx.push({ x: p.x, y: p.y, r: 6, a: 1 });
+    return;
+  }
   /* anywhere else on the lower-left half becomes the thumbstick, anchored
      under the thumb rather than at some fixed spot it has to find */
   if (!Input.stick.active && p.x < VW * 0.55 && p.y > VH * 0.22) {
@@ -557,6 +563,17 @@ function updateParticles(dt) {
   }
 }
 
+/* screen-space touch feedback — an invisible jump zone needs to confirm
+   that it heard you, or a missed jump feels like a broken button */
+const hudFx = [];
+function updateHudFx(dt) {
+  for (let i = hudFx.length - 1; i >= 0; i--) {
+    const f = hudFx[i];
+    f.r += 190 * dt; f.a -= 2.4 * dt;
+    if (f.a <= 0) hudFx.splice(i, 1);
+  }
+}
+
 const floaters = [];
 function floatText(x, y, txt, depth) { floaters.push({ x, y, txt, life: 0.9, max: 0.9, depth }); }
 function updateFloaters(dt) {
@@ -619,13 +636,14 @@ const Game = {
   state: "preload",
   levelIdx: 0, level: null,
   t: 0, stateT: 0, camX: 0, camY: 0, shake: 0, transition: 0,
-  hearts: 3, score: 0, bestChain: 0, ripplesFired: 0, runTime: 0,
+  hearts: 3, score: 0, bestChain: 0, ripplesFired: 0, runTime: 0, jumpsMade: 0,
   titleBall: { y: 0, vy: 0, rot: 0 }, titleRipples: [],
 
   loadLevel(i) {
     const L = LEVELS[i];
     this.levelIdx = i;
     this.score = 0; this.bestChain = 0; this.ripplesFired = 0; this.runTime = 0;
+    this.jumpsMade = Save.everJumped ? 3 : 0;   // returning players skip the hint
     const terrain = buildTerrain(L.spans);
     const gy = x => terrain.at(x);
     const place = o => o.y !== undefined ? o.y : (gy(o.x) ?? 400) - (o.up ?? 60);
@@ -831,6 +849,8 @@ function updatePlay(dt) {
   if (b.jumpBuf > 0 && b.groundT > 0) {
     b.vy = -760; b.jumpBuf = 0; b.groundT = 0; b.grounded = false;
     b.sqx = 0.78; b.sqy = 1.26; Audio_.jump();
+    Game.jumpsMade++;                       // once they've got it, dim the hint
+    if (Game.jumpsMade === 3 && !Save.everJumped) { Save.everJumped = true; persist(); }
     for (let i = 0; i < 6; i++)
       spawnParticle(b.x + rnd(-10, 10), b.y + b.r, rnd(-90, 90), rnd(-20, 60), 0.35, rnd(2, 4), "#ffffff55");
   }
@@ -1491,11 +1511,14 @@ function drawFloaters() {
 
 /* ---------- HUD -------------------------------------------- */
 const btns = {};
+const JUMP_ZONE = 0.52;    // right of this fraction of the screen = jump
+
 function layoutButtons() {
-  const m = 24, by = VH - 24 - 52;
-  btns.home   = { x: m + STICK_R + 8, y: by, r: STICK_R };   // stick resting spot
-  btns.ripple = { x: VW - m - 52 - 118, y: by, r: 50 };
-  btns.jump   = { x: VW - m - 52, y: by, r: 52 };
+  const m = 24, rr = 62;
+  btns.home   = { x: m + STICK_R + 8, y: VH - m - STICK_R, r: STICK_R };
+  /* one big deliberate target for the signature action; jumping needs no
+     target at all, so it gets the whole rest of the right-hand side */
+  btns.ripple = { x: VW - m - rr, y: VH - m - rr, r: rr };
   btns.pause  = { x: 32, y: 30, r: 18 };
 }
 function drawButton(b, glyph, active) {
@@ -1514,6 +1537,44 @@ function drawButton(b, glyph, active) {
   if (glyph === "pause") { ctx.fillRect(b.x - 6, b.y - 8, 4.5, 16); ctx.fillRect(b.x + 1.5, b.y - 8, 4.5, 16); }
   ctx.restore();
 }
+/* The jump zone has no button, so it has to advertise itself: loud for the
+   first couple of jumps, then a permanent faint watermark so it is always
+   discoverable without sitting on top of the art. */
+function drawJumpZone() {
+  const taught = clamp(1 - Game.jumpsMade / 3, 0, 1);
+  const alpha = 0.14 + taught * 0.5;
+  const cx = (VW * JUMP_ZONE + VW - 150) / 2, cy = VH * 0.46;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  if (taught > 0.05) {                      // boundary hint, only while learning
+    ctx.globalAlpha = taught * 0.16;
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.setLineDash([8, 10]);
+    ctx.beginPath(); ctx.moveTo(VW * JUMP_ZONE, 70); ctx.lineTo(VW * JUMP_ZONE, VH - 34); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = alpha;
+  }
+
+  const bob = Math.sin(Game.t * 2.4) * (3 + taught * 4);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (let i = 0; i < 2; i++) {
+    const y = cy + bob + i * 20;
+    ctx.globalAlpha = alpha * (i === 0 ? 1 : 0.4);
+    ctx.beginPath();
+    ctx.moveTo(cx - 24, y + 14); ctx.lineTo(cx, y - 8); ctx.lineTo(cx + 24, y + 14);
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.font = "800 12px system-ui,sans-serif";
+  ctx.fillStyle = "#fff";
+  ctx.fillText("TAP THIS SIDE TO JUMP", cx, cy + bob + 62);
+  ctx.restore();
+}
+
 /* floating thumbstick — rests bottom-left, but re-anchors under the thumb
    wherever it lands, so nobody has to hunt for a fixed control */
 function drawStick(t) {
@@ -1633,8 +1694,17 @@ function drawHUD() {
   ctx.fillText(Game.bestChain > 1 ? "BEST CHAIN ×" + Game.bestChain : "IMPACT", VW - 24, 52);
 
   drawStick(Game.t);
+  drawJumpZone();
   drawRippleButton(btns.ripple, Game.ball.cd <= 0, Math.max(0, Game.ball.cd));
-  drawButton(btns.jump, "up", Input.jump);
+
+  /* the ring that confirms a tap landed, wherever it landed */
+  for (const f of hudFx) {
+    ctx.save();
+    ctx.globalAlpha = clamp(f.a, 0, 1) * 0.7;
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, TAU); ctx.stroke();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -1772,7 +1842,7 @@ function drawTitle(t, dt) {
   const play = bigButton("PLAY", VH * 0.60);
   const info = bigButton("WHY WE'RE HERE", VH * 0.60 + 60, 200, 40, false);
   ctx.save(); ctx.globalAlpha = 0.4;
-  centreText("drag to steer   ·   tap ⌃ to jump   ·   tap ◎ to ripple      (keys: ← → / ↑ / E)",
+  centreText("drag left to steer   ·   tap the right side to jump   ·   tap ◎ to ripple      (keys: ← → / ↑ / E)",
     VH - 20, 12, "#fff", 500);
   ctx.restore();
 
@@ -1968,6 +2038,7 @@ function frame(now) {
 
   updateParticles(raw);
   updateFloaters(raw);
+  updateHudFx(raw);
   Game.shake = Math.max(0, Game.shake - raw * 60);
 
   clearFrame();
