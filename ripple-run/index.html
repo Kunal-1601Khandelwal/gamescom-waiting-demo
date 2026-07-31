@@ -271,7 +271,16 @@ const LEVELS = [
     { x:2600, up:70 }, { x:2660, up:70 },
     { x:3000, up:80 }, { x:3060, up:80 }
   ],
-  obstacles: [ { x:2790, a:2660, b:2960 } ],
+  obstacles: [
+    { x:460,  a:380,  b:640,  type:"walker" },
+    { x:1150, type:"blocker" },
+    { x:1880, a:1790, b:2080, type:"walker" },
+    /* pair sitting inside the calm ring's radius — one ripple takes both */
+    { x:2600, a:2520, b:2700, type:"walker" },
+    { x:2760, a:2700, b:2880, type:"walker" },
+    { x:3080, a:3000, b:3150, type:"hopper" },
+    { x:3230, a:3170, b:3300, type:"walker" }
+  ],
   spikes: [ { x:1420, n:3 } ],
   checkpoints: [ { x:1250, up:0 }, { x:2560, up:0 } ],
   goal: { x:3350, up:0 }
@@ -324,7 +333,20 @@ const LEVELS = [
     { x:3300, y:260 },
     { x:3900, up:80 }, { x:3960, up:80 }
   ],
-  obstacles: [ { x:2450, a:2340, b:2660 }, { x:2980, a:2880, b:3080 }, { x:3900, a:3800, b:4060 } ],
+  obstacles: [
+    { x:300,  a:230,  b:420,  type:"walker" },
+    { x:1000, a:930,  b:1040, type:"walker" },
+    { x:1250, type:"blocker" },
+    { x:1650, a:1580, b:1780, type:"hopper" },
+    { x:2300, a:2250, b:2360, type:"walker" },
+    { x:2440, a:2380, b:2500, type:"walker" },
+    /* cluster guarding the run-up to the third gap */
+    { x:2900, a:2840, b:2960, type:"walker" },
+    { x:2990, a:2960, b:3060, type:"walker" },
+    { x:3150, a:3080, b:3280, type:"hopper" },
+    { x:3800, a:3740, b:3880, type:"walker" },
+    { x:4020, a:3960, b:4120, type:"walker" }
+  ],
   spikes: [ { x:1150, n:4 }, { x:2620, n:4 } ],
   checkpoints: [ { x:1050, up:0 }, { x:2500, up:0 } ],
   goal: { x:4180, up:0 }
@@ -382,8 +404,22 @@ const LEVELS = [
     { x:4765, y:190 },
     { x:5060, up:70 }, { x:5120, up:70 }
   ],
-  obstacles: [ { x:1300, a:1200, b:1420 }, { x:2300, a:2200, b:2400 },
-               { x:3080, a:3020, b:3140 }, { x:4150, a:4040, b:4300 } ],
+  obstacles: [
+    { x:250,  a:190,  b:380,  type:"walker" },
+    { x:950,  a:900,  b:1040, type:"walker" },
+    { x:1330, a:1270, b:1420, type:"walker" },
+    { x:1560, type:"blocker" },
+    { x:1660, a:1600, b:1710, type:"hopper" },
+    { x:2300, a:2200, b:2400, type:"walker" },
+    { x:2470, a:2410, b:2540, type:"walker" },
+    { x:2700, a:2620, b:2780, type:"hopper" },
+    { x:2900, a:2820, b:2940, type:"walker" },
+    { x:3700, a:3620, b:3820, type:"walker" },
+    { x:3950, type:"blocker" },
+    { x:4150, a:4040, b:4300, type:"walker" },
+    { x:4450, a:4380, b:4560, type:"hopper" },
+    { x:5100, a:5030, b:5220, type:"walker" }
+  ],
   spikes: [ { x:1180, n:4 }, { x:3040, n:5 } ],
   checkpoints: [ { x:1150, up:0 }, { x:2300, up:0 }, { x:3150, up:0 }, { x:4400, up:0 } ],
   goal: { x:5300, up:0 }
@@ -425,7 +461,19 @@ const LEVELS = [
     { x:2145, y:260 },
     { x:2600, up:70 }, { x:2660, up:70 }
   ],
-  obstacles: [ { x:1300, a:1200, b:1420 }, { x:2500, a:2400, b:2620 } ],
+  obstacles: [
+    { x:300,  a:240,  b:420,  type:"walker" },
+    { x:950,  a:900,  b:1040, type:"walker" },
+    { x:1330, a:1240, b:1420, type:"walker" },
+    { x:1600, type:"blocker" },
+    { x:1720, a:1660, b:1800, type:"hopper" },
+    { x:2350, a:2280, b:2450, type:"walker" },
+    { x:2500, a:2460, b:2620, type:"walker" },
+    { x:2750, a:2700, b:2860, type:"hopper" },
+    /* arena adds — these are what you fight alongside THE STALL */
+    { x:3150, a:3050, b:3280, type:"walker" },
+    { x:3800, a:3700, b:3900, type:"walker" }
+  ],
   spikes: [ { x:1150, n:4 } ],
   checkpoints: [ { x:1100, up:0 }, { x:2400, up:0 } ],
   stall: { x:3450 },
@@ -537,10 +585,20 @@ const Game = {
       })),
       pulses: (L.pulses || []).map(p => ({ x: p.x, y: place(p), got: false, ph: Math.random() * TAU })),
       spikes: (L.spikes || []).map(s => ({ x: s.x, n: s.n, y: gy(s.x) ?? 400 })),
-      obstacles: (L.obstacles || []).map(o => ({
-        x: o.x, y: (gy(o.x) ?? 400) - 26, a: o.a, b: o.b, dir: 1, w: 46, h: 46,
-        calm: false, gone: false, goneT: 0, sq: 0
-      })),
+      obstacles: (L.obstacles || []).map(o => {
+        /* walker patrols, hopper patrols and jumps, blocker is a stationary
+           pillar that is solid from above but hurts from the side until calmed */
+        const type = o.type || "walker";
+        const w = type === "blocker" ? 44 : 46;
+        const h = type === "blocker" ? 70 : 46;
+        return {
+          type, x: o.x, y: (gy(o.x) ?? 400) - h / 2,
+          a: o.a !== undefined ? o.a : o.x,
+          b: o.b !== undefined ? o.b : o.x,
+          dir: 1, w, h, vy: 0, grounded: true, jumpT: rnd(0.5, 1.8),
+          calm: false, gone: false, goneT: 0, sq: 0
+        };
+      }),
       checkpoints: (L.checkpoints || []).map(c => ({ x: c.x, y: gy(c.x) ?? 400, on: false })),
       goal: { x: L.goal.x, y: gy(L.goal.x) ?? 400, ph: 0 },
       stall: null, stallGate: L.stallGate || null, stallCleared: !L.stall
@@ -788,21 +846,43 @@ function updatePlay(dt) {
   for (const o of L.obstacles) {
     if (o.gone) { o.goneT += dt; continue; }
     o.sq = approach(o.sq, 0, dt * 4);
-    if (!o.calm) {
-      o.x += o.dir * 78 * dt;
-      if (o.x < o.a) { o.x = o.a; o.dir = 1; }
-      if (o.x > o.b) { o.x = o.b; o.dir = -1; }
+
+    if (o.type === "hopper") {
+      o.jumpT -= dt;
+      if (o.jumpT <= 0 && o.grounded && !o.calm) {
+        o.vy = -520; o.grounded = false; o.jumpT = rnd(1.1, 1.9); o.sq = 0.6;
+      }
+      o.vy += GRAV * dt; o.y += o.vy * dt;
+      if (!o.calm) {
+        o.x += o.dir * 52 * dt;
+        if (o.x < o.a) { o.x = o.a; o.dir = 1; }
+        if (o.x > o.b) { o.x = o.b; o.dir = -1; }
+      }
+      const g = L.terrain.at(o.x);
+      if (g !== null && o.y + o.h / 2 > g) { o.y = g - o.h / 2; o.vy = 0; o.grounded = true; }
+    } else if (o.type === "blocker") {
+      const g = L.terrain.at(o.x);
+      if (g !== null) o.y = lerp(o.y, g - o.h / 2, Math.min(1, dt * 10));
+    } else {
+      if (!o.calm) {
+        o.x += o.dir * 78 * dt;
+        if (o.x < o.a) { o.x = o.a; o.dir = 1; }
+        if (o.x > o.b) { o.x = o.b; o.dir = -1; }
+      }
       const g = L.terrain.at(o.x);
       if (g === null) { o.dir *= -1; o.x += o.dir * 4; }
       else o.y = lerp(o.y, g - o.h / 2, Math.min(1, dt * 14));
-    } else {
-      const g = L.terrain.at(o.x);
-      if (g !== null) o.y = lerp(o.y, g - o.h / 2, Math.min(1, dt * 10));
     }
+
     const hit = circleRect(b.x, b.y, b.r, o.x, o.y, o.w, o.h);
     if (hit) {
-      if (o.calm) resolve(b, hit);                        // calmed: just a block
-      else if (hit.ny < -0.55 && b.vy > 40) {             // bounced off the top
+      if (o.type === "blocker") {
+        /* always solid — you can ride the top, but the sides bite until calmed */
+        resolve(b, hit);
+        if (!o.calm && hit.ny > -0.5) { Game.damage(); return; }
+      } else if (o.calm) {
+        resolve(b, hit);                                  // calmed: just a block
+      } else if (hit.ny < -0.55 && b.vy > 40) {           // bounced off the top
         o.gone = true; b.vy = -560; b.sqx = 0.8; b.sqy = 1.24;
         Game.shake = 8; Game.score += 10; Audio_.land();
         burst(o.x, o.y, 12, C.inert2, 240, 5);
@@ -1081,7 +1161,9 @@ function drawObstacle(o, t) {
     ctx.translate(o.x, o.y + k * 30); ctx.scale(1 + k * 0.5, 1 - k * 0.7);
   } else {
     ctx.translate(o.x, o.y);
-    const s = 1 + Math.sin(t * 4 + o.x) * 0.025 + o.sq * 0.22;
+    /* a hopper stretches on the way up and squashes on landing */
+    const air = o.type === "hopper" ? clamp(-o.vy / 900, -0.18, 0.18) : 0;
+    const s = 1 + Math.sin(t * 4 + o.x) * 0.025 + o.sq * 0.22 - air;
     ctx.scale(s, 2 - s);
   }
   const w = o.w, h = o.h;
@@ -1092,20 +1174,40 @@ function drawObstacle(o, t) {
   if (o.calm) { g.addColorStop(0, "#2e8ae0"); g.addColorStop(1, C.blue); }
   else { g.addColorStop(0, C.inert2); g.addColorStop(1, C.inert); }
   ctx.fillStyle = g;
-  roundRect(-w / 2, -h / 2, w, h, 12); ctx.fill();
+  roundRect(-w / 2, -h / 2, w, h, o.type === "blocker" ? 8 : 12); ctx.fill();
   ctx.strokeStyle = o.calm ? C.bright : C.dark; ctx.lineWidth = 3; ctx.stroke();
 
+  /* a blocker wears grip bands so it reads as "climb me", not "chase me" */
+  if (o.type === "blocker") {
+    ctx.strokeStyle = o.calm ? "rgba(127,212,255,0.55)" : "rgba(0,0,0,0.28)";
+    ctx.lineWidth = 2.5;
+    for (let i = -1; i <= 1; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(-w / 2 + 7, i * 12 + 20); ctx.lineTo(w / 2 - 7, i * 12 + 20);
+      ctx.stroke();
+    }
+  }
+  /* a hopper sits on a compressed spring */
+  if (o.type === "hopper") {
+    ctx.strokeStyle = o.calm ? C.bright : C.inert2;
+    ctx.lineWidth = 3; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(0, h / 2 + 2, 11, 0.12 * Math.PI, 0.88 * Math.PI);
+    ctx.stroke();
+  }
+
+  const eyeY = o.type === "blocker" ? -16 : -6;
   const look = o.calm ? 0 : o.dir * 3;
   ctx.fillStyle = C.white;
-  ctx.beginPath(); ctx.ellipse(-10 + look, -6, 8, 8.5, 0, 0, TAU); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(10 + look, -6, 8, 8.5, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-10 + look, eyeY, 8, 8.5, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10 + look, eyeY, 8, 8.5, 0, 0, TAU); ctx.fill();
   ctx.fillStyle = "#0b1a2e";
-  ctx.beginPath(); ctx.arc(-9 + look * 1.6, -5, 3.6, 0, TAU); ctx.fill();
-  ctx.beginPath(); ctx.arc(11 + look * 1.6, -5, 3.6, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(-9 + look * 1.6, eyeY + 1, 3.6, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(11 + look * 1.6, eyeY + 1, 3.6, 0, TAU); ctx.fill();
   ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.strokeStyle = "#0b1a2e";
   ctx.beginPath();
-  if (o.calm) ctx.arc(0, 6, 8, 0.15 * Math.PI, 0.85 * Math.PI);       // smile
-  else ctx.arc(0, 20, 9, 1.15 * Math.PI, 1.85 * Math.PI);             // frown
+  if (o.calm) ctx.arc(0, eyeY + 12, 8, 0.15 * Math.PI, 0.85 * Math.PI);   // smile
+  else ctx.arc(0, eyeY + 26, 9, 1.15 * Math.PI, 1.85 * Math.PI);          // frown
   ctx.stroke();
   ctx.restore();
 }
