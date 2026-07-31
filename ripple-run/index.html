@@ -126,9 +126,15 @@ const Audio_ = {
 };
 
 /* ---------- input ------------------------------------------ */
+const STICK_R = 52;        // how far the knob travels from its anchor
+const STICK_DEAD = 0.16;   // ignore tiny thumb wobble
+
 const Input = {
   left: false, right: false, jump: false, jumpPressed: false, ripplePressed: false,
-  keys: {}, pointers: new Map(), tapped: false, tapPos: null, _jPrev: false, _rPrev: false
+  axis: 0,                                   // -1..1 analog from the thumbstick
+  stick: { id: null, ax: 0, ay: 0, kx: 0, ky: 0, active: false },
+  roles: new Map(),                          // pointerId -> 'stick' | 'jump' | 'ripple' | 'ui'
+  keys: {}, pointers: new Map(), tapped: false, tapPos: null
 };
 
 addEventListener("keydown", e => {
@@ -156,15 +162,51 @@ function ptPos(e) {
   const r = cv.getBoundingClientRect();
   return { x: (e.clientX - r.left - ox) / scale, y: (e.clientY - r.top - oy) / scale };
 }
+/* Each finger is given a ROLE the moment it lands and keeps it until it
+   lifts, so dragging the stick across a button can never trigger that
+   button, and a second finger can jump while the first still steers. */
+function assignRole(id, p) {
+  if (Game.state !== "play") { Input.roles.set(id, "ui"); return; }
+  layoutButtons();
+  const near = bt => Math.hypot(p.x - bt.x, p.y - bt.y) < bt.r + 14;
+  if (near(btns.pause)) { Input.roles.set(id, "ui"); return; }
+  if (near(btns.jump))   { Input.roles.set(id, "jump");   Input.jumpPressed = true;   return; }
+  if (near(btns.ripple)) { Input.roles.set(id, "ripple"); Input.ripplePressed = true; return; }
+  /* anywhere else on the lower-left half becomes the thumbstick, anchored
+     under the thumb rather than at some fixed spot it has to find */
+  if (!Input.stick.active && p.x < VW * 0.55 && p.y > VH * 0.22) {
+    const ax = clamp(p.x, STICK_R + 10, VW * 0.6);
+    const ay = clamp(p.y, STICK_R + 10, VH - STICK_R - 10);
+    Input.stick = { id, ax, ay, kx: p.x, ky: p.y, active: true };
+    Input.roles.set(id, "stick");
+    return;
+  }
+  Input.roles.set(id, "ui");
+}
+
 cv.addEventListener("pointerdown", e => {
   const p = ptPos(e);
   Input.pointers.set(e.pointerId, p);
   Input.tapped = true; Input.tapPos = p;
   Audio_.init(); Audio_.resume();
+  assignRole(e.pointerId, p);
   try { cv.setPointerCapture(e.pointerId); } catch (err) {}
 });
-cv.addEventListener("pointermove", e => { if (Input.pointers.has(e.pointerId)) Input.pointers.set(e.pointerId, ptPos(e)); });
-const endPtr = e => Input.pointers.delete(e.pointerId);
+cv.addEventListener("pointermove", e => {
+  if (!Input.pointers.has(e.pointerId)) return;
+  const p = ptPos(e);
+  Input.pointers.set(e.pointerId, p);
+  if (Input.roles.get(e.pointerId) === "stick" && Input.stick.id === e.pointerId) {
+    Input.stick.kx = p.x; Input.stick.ky = p.y;
+  }
+});
+const endPtr = e => {
+  Input.pointers.delete(e.pointerId);
+  if (Input.roles.get(e.pointerId) === "stick" && Input.stick.id === e.pointerId) {
+    Input.stick.active = false; Input.stick.id = null; Input.axis = 0;
+  }
+  Input.roles.delete(e.pointerId);
+};
 cv.addEventListener("pointerup", endPtr);
 cv.addEventListener("pointercancel", endPtr);
 cv.addEventListener("contextmenu", e => e.preventDefault());
@@ -774,10 +816,15 @@ function updatePlay(dt) {
   const L = Game.level, b = Game.ball;
   Game.runTime += dt;
 
-  const dir = (Input.right ? 1 : 0) - (Input.left ? 1 : 0);
+  /* keyboard is binary, the thumbstick is analog — a gentle tilt rolls slowly,
+     which is what you want when lining up on a bridge */
+  let dir = (Input.right ? 1 : 0) - (Input.left ? 1 : 0);
+  if (dir === 0) dir = Input.axis;
   const MAXV = 340, ACC = b.grounded ? 2400 : 1500, FRIC = b.grounded ? 2000 : 260;
-  if (dir !== 0) { b.vx = approach(b.vx, MAXV * dir, ACC * dt); b.face = dir; }
-  else b.vx = approach(b.vx, 0, FRIC * dt);
+  if (Math.abs(dir) > 0.01) {
+    b.vx = approach(b.vx, MAXV * dir, ACC * dt);
+    b.face = dir > 0 ? 1 : -1;
+  } else b.vx = approach(b.vx, 0, FRIC * dt);
 
   if (Input.jumpPressed) { b.jumpBuf = 0.13; Input.jumpPressed = false; }
   b.jumpBuf -= dt; b.groundT -= dt; b.cd -= dt;
@@ -1445,17 +1492,11 @@ function drawFloaters() {
 /* ---------- HUD -------------------------------------------- */
 const btns = {};
 function layoutButtons() {
-  const r = 40, m = 24, by = VH - r - 24;
-  btns.left   = { x: m + r, y: by, r };
-  btns.right  = { x: m + r * 3 + 20, y: by, r };
-  btns.ripple = { x: VW - m - 48 - 112, y: by, r: 46 };
-  btns.jump   = { x: VW - m - 48, y: by, r: 48 };
+  const m = 24, by = VH - 24 - 52;
+  btns.home   = { x: m + STICK_R + 8, y: by, r: STICK_R };   // stick resting spot
+  btns.ripple = { x: VW - m - 52 - 118, y: by, r: 50 };
+  btns.jump   = { x: VW - m - 52, y: by, r: 52 };
   btns.pause  = { x: 32, y: 30, r: 18 };
-}
-function pointerIn(b) {
-  for (const p of Input.pointers.values())
-    if (Math.hypot(p.x - b.x, p.y - b.y) < b.r + 14) return true;
-  return false;
 }
 function drawButton(b, glyph, active) {
   ctx.save();
@@ -1473,6 +1514,63 @@ function drawButton(b, glyph, active) {
   if (glyph === "pause") { ctx.fillRect(b.x - 6, b.y - 8, 4.5, 16); ctx.fillRect(b.x + 1.5, b.y - 8, 4.5, 16); }
   ctx.restore();
 }
+/* floating thumbstick — rests bottom-left, but re-anchors under the thumb
+   wherever it lands, so nobody has to hunt for a fixed control */
+function drawStick(t) {
+  const s = Input.stick;
+  const home = btns.home;
+  const ax = s.active ? s.ax : home.x, ay = s.active ? s.ay : home.y;
+
+  let kx = ax, ky = ay;
+  if (s.active) {
+    const dx = s.kx - ax, dy = s.ky - ay;
+    const d = Math.hypot(dx, dy);
+    const cl = d > STICK_R ? STICK_R / d : 1;
+    kx = ax + dx * cl; ky = ay + dy * cl;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = s.active ? 1 : 0.5;
+
+  /* base */
+  ctx.beginPath(); ctx.arc(ax, ay, STICK_R, 0, TAU);
+  ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = s.active ? C.bright : "rgba(255,255,255,0.4)"; ctx.stroke();
+
+  /* travel track — shows this thing slides sideways */
+  ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.beginPath(); ctx.moveTo(ax - STICK_R + 12, ay); ctx.lineTo(ax + STICK_R - 12, ay); ctx.stroke();
+
+  /* chevrons, so an idle stick still reads as left/right */
+  ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 3.5;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const sgn of [-1, 1]) {
+    const cx = ax + sgn * (STICK_R - 13);
+    ctx.beginPath();
+    ctx.moveTo(cx - sgn * 5, ay - 7); ctx.lineTo(cx + sgn * 4, ay); ctx.lineTo(cx - sgn * 5, ay + 7);
+    ctx.stroke();
+  }
+
+  /* how hard you're pushing */
+  if (s.active && Math.abs(Input.axis) > 0.01) {
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = C.bright;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay - 16); ctx.lineTo(kx, ky); ctx.lineTo(ax, ay + 16);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /* knob */
+  const kr = 25;
+  ctx.beginPath(); ctx.arc(kx, ky, kr, 0, TAU);
+  const g = ctx.createRadialGradient(kx - 7, ky - 8, 2, kx, ky, kr * 1.3);
+  g.addColorStop(0, "#ffffff"); g.addColorStop(0.65, C.white); g.addColorStop(1, "#b9d3f2");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = s.active ? C.bright : "rgba(255,255,255,0.55)"; ctx.stroke();
+  ctx.restore();
+}
+
 function drawRippleButton(b, ready, cd) {
   ctx.save();
   ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU);
@@ -1534,8 +1632,7 @@ function drawHUD() {
   ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.fillText(Game.bestChain > 1 ? "BEST CHAIN ×" + Game.bestChain : "IMPACT", VW - 24, 52);
 
-  drawButton(btns.left, "left", Input.left);
-  drawButton(btns.right, "right", Input.right);
+  drawStick(Game.t);
   drawRippleButton(btns.ripple, Game.ball.cd <= 0, Math.max(0, Game.ball.cd));
   drawButton(btns.jump, "up", Input.jump);
   ctx.restore();
@@ -1675,7 +1772,8 @@ function drawTitle(t, dt) {
   const play = bigButton("PLAY", VH * 0.60);
   const info = bigButton("WHY WE'RE HERE", VH * 0.60 + 60, 200, 40, false);
   ctx.save(); ctx.globalAlpha = 0.4;
-  centreText("← → move   ·   ↑ jump   ·   E / ↓ ripple   ·   P pause   ·   M mute", VH - 20, 12, "#fff", 500);
+  centreText("drag to steer   ·   tap ⌃ to jump   ·   tap ◎ to ripple      (keys: ← → / ↑ / E)",
+    VH - 20, 12, "#fff", 500);
   ctx.restore();
 
   if (tappedIn(play) || Input.keys.Enter) { Game.setState("select"); Input.tapped = false; }
@@ -1841,20 +1939,26 @@ function frame(now) {
 
   if (Game.state === "play") {
     layoutButtons();
-    const jNow = pointerIn(btns.jump);
-    if (jNow && !Input._jPrev) Input.jumpPressed = true;
-    Input._jPrev = jNow;
-    const rNow = pointerIn(btns.ripple);
-    if (rNow && !Input._rPrev) Input.ripplePressed = true;
-    Input._rPrev = rNow;
-    Input.left  = Input.left  || pointerIn(btns.left);
-    Input.right = Input.right || pointerIn(btns.right);
-    Input.jump  = Input.jump  || jNow;
+    /* held state comes from finger roles, not from hit-testing every frame */
+    let jHeld = false;
+    for (const role of Input.roles.values()) if (role === "jump") jHeld = true;
+    Input.jump = Input.jump || jHeld;
+
+    if (Input.stick.active) {
+      const s = Input.stick;
+      const dx = s.kx - s.ax;
+      let a = clamp(dx / STICK_R, -1, 1);
+      if (Math.abs(a) < STICK_DEAD) a = 0;
+      /* rescale past the deadzone so the first responsive notch isn't a jump */
+      else a = Math.sign(a) * ((Math.abs(a) - STICK_DEAD) / (1 - STICK_DEAD));
+      Input.axis = a;
+    } else Input.axis = 0;
+
     if (Input.tapped && Input.tapPos &&
         Math.hypot(Input.tapPos.x - btns.pause.x, Input.tapPos.y - btns.pause.y) < 30) {
       Game.togglePause(); Input.tapped = false;
     }
-  }
+  } else { Input.axis = 0; Input.stick.active = false; }
 
   if (Game.state === "play") {
     acc += raw;
