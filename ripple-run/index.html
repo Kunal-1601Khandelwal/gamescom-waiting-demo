@@ -1514,11 +1514,11 @@ const btns = {};
 const JUMP_ZONE = 0.52;    // right of this fraction of the screen = jump
 
 function layoutButtons() {
-  const m = 24, rr = 62;
+  const m = 24, rr = 52;
   btns.home   = { x: m + STICK_R + 8, y: VH - m - STICK_R, r: STICK_R };
-  /* one big deliberate target for the signature action; jumping needs no
-     target at all, so it gets the whole rest of the right-hand side */
-  btns.ripple = { x: VW - m - rr, y: VH - m - rr, r: rr };
+  /* ripple sits top-right as an index-finger button, which leaves the whole
+     bottom-right free for the thumb — the two can never be confused */
+  btns.ripple = { x: VW - m - rr, y: m + rr, r: rr };
   btns.pause  = { x: 32, y: 30, r: 18 };
 }
 function drawButton(b, glyph, active) {
@@ -1685,13 +1685,14 @@ function drawHUD() {
   ctx.fillStyle = "rgba(255,255,255,0.9)";
   ctx.fillText(label, VW / 2, 33);
 
-  ctx.textAlign = "right";
-  ctx.font = "800 22px system-ui,sans-serif";
+  /* score moves under the hearts — the top-right corner is the ripple button now */
+  ctx.textAlign = "left";
+  ctx.font = "800 24px system-ui,sans-serif";
   ctx.fillStyle = C.white;
-  ctx.fillText(String(Game.score), VW - 24, 36);
+  ctx.fillText(String(Game.score), 26, 74);
   ctx.font = "700 11px system-ui,sans-serif";
   ctx.fillStyle = "rgba(255,255,255,0.55)";
-  ctx.fillText(Game.bestChain > 1 ? "BEST CHAIN ×" + Game.bestChain : "IMPACT", VW - 24, 52);
+  ctx.fillText(Game.bestChain > 1 ? "BEST CHAIN ×" + Game.bestChain : "IMPACT", 26, 90);
 
   drawStick(Game.t);
   drawJumpZone();
@@ -1842,7 +1843,7 @@ function drawTitle(t, dt) {
   const play = bigButton("PLAY", VH * 0.60);
   const info = bigButton("WHY WE'RE HERE", VH * 0.60 + 60, 200, 40, false);
   ctx.save(); ctx.globalAlpha = 0.4;
-  centreText("drag left to steer   ·   tap the right side to jump   ·   tap ◎ to ripple      (keys: ← → / ↑ / E)",
+  centreText("drag left to steer   ·   tap the right side to jump   ·   ◎ top-right to ripple      (keys: ← → / ↑ / E)",
     VH - 20, 12, "#fff", 500);
   ctx.restore();
 
